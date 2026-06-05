@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 var rootCmd = &cobra.Command{
@@ -18,9 +19,16 @@ Commands:
   push    Upload a model from Ollama to Walrus
   pull    Download a model from Walrus into Ollama
   show    Display model info from a Walrus manifest
-  list    List locally synced models
+  list    List models available in Ollama
   config  Manage Wolllama configuration`,
 	SilenceUsage: true,
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		// Initialize config before any command runs
+		if err := initViper(); err != nil {
+			return fmt.Errorf("init config: %w", err)
+		}
+		return nil
+	},
 }
 
 // Execute runs the root command.
@@ -31,6 +39,11 @@ func Execute() error {
 func init() {
 	// Global flags
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "Verbose output")
+	rootCmd.PersistentFlags().String("ollama-path", "", "Path to Ollama home directory (default: ~/.ollama)")
+
+	// Bind persistent flags to viper
+	viper.BindPFlag("ollama_path", rootCmd.PersistentFlags().Lookup("ollama-path"))
+	viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
 }
 
 // exitf prints an error and exits.

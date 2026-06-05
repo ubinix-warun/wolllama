@@ -13,8 +13,8 @@ const (
 	defaultPublisherURL  = "https://publisher.walrus-testnet.walrus.space"
 	defaultAggregatorURL = "https://aggregator.walrus-testnet.walrus.space"
 	defaultEpochs        = 10
-	configDir            = ".wolllama"
-	configFile           = "config"
+	configDirName        = ".wolllama"
+	configFileName       = "config"
 )
 
 func init() {
@@ -50,54 +50,50 @@ Examples:
 	RunE: runConfigSet,
 }
 
-func initConfig() (*viper.Viper, error) {
-	v := viper.New()
-
+// initViper configures the global viper instance with defaults, config file, and env vars.
+// Called once from the root command's PersistentPreRunE.
+func initViper() error {
 	configPath, err := configFilePath()
-	if err != nil {
-		return nil, err
-	}
-
-	// Ensure config directory exists
-	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
-		return nil, fmt.Errorf("create config dir: %w", err)
-	}
-
-	v.SetConfigName(configFile)
-	v.SetConfigType("yaml")
-	v.AddConfigPath(filepath.Dir(configPath))
-
-	// Defaults
-	v.SetDefault("publisher_url", defaultPublisherURL)
-	v.SetDefault("aggregator_url", defaultAggregatorURL)
-	v.SetDefault("epochs", defaultEpochs)
-
-	// Env var overrides
-	v.SetEnvPrefix("WOLLLAMA")
-	v.AutomaticEnv()
-
-	// Read config file (ok if missing — use defaults)
-	if err := v.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			return nil, fmt.Errorf("read config: %w", err)
-		}
-	}
-
-	return v, nil
-}
-
-func runConfigShow(cmd *cobra.Command, args []string) error {
-	v, err := initConfig()
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("publisher_url:  %s\n", v.GetString("publisher_url"))
-	fmt.Printf("aggregator_url: %s\n", v.GetString("aggregator_url"))
-	fmt.Printf("epochs:         %d\n", v.GetInt("epochs"))
+	// Ensure config directory exists
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		return fmt.Errorf("create config dir: %w", err)
+	}
 
-	if v.ConfigFileUsed() != "" {
-		fmt.Printf("\nconfig file: %s\n", v.ConfigFileUsed())
+	viper.SetConfigName(configFileName)
+	viper.SetConfigType("yaml")
+	viper.AddConfigPath(filepath.Dir(configPath))
+
+	// Defaults
+	viper.SetDefault("publisher_url", defaultPublisherURL)
+	viper.SetDefault("aggregator_url", defaultAggregatorURL)
+	viper.SetDefault("epochs", defaultEpochs)
+	viper.SetDefault("ollama_path", "")
+
+	// Env var overrides: WOLLLAMA_PUBLISHER_URL, WOLLLAMA_EPOCHS, etc.
+	viper.SetEnvPrefix("WOLLLAMA")
+	viper.AutomaticEnv()
+
+	// Read config file (ok if missing — use defaults)
+	if err := viper.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+			return fmt.Errorf("read config: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func runConfigShow(cmd *cobra.Command, args []string) error {
+	fmt.Printf("publisher_url:  %s\n", viper.GetString("publisher_url"))
+	fmt.Printf("aggregator_url: %s\n", viper.GetString("aggregator_url"))
+	fmt.Printf("epochs:         %d\n", viper.GetInt("epochs"))
+
+	if viper.ConfigFileUsed() != "" {
+		fmt.Printf("\nconfig file: %s\n", viper.ConfigFileUsed())
 	}
 
 	return nil
@@ -106,11 +102,6 @@ func runConfigShow(cmd *cobra.Command, args []string) error {
 func runConfigSet(cmd *cobra.Command, args []string) error {
 	key := args[0]
 	value := args[1]
-
-	v, err := initConfig()
-	if err != nil {
-		return err
-	}
 
 	validKeys := map[string]bool{
 		"publisher_url":  true,
@@ -121,20 +112,20 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("unknown config key %q (valid: publisher_url, aggregator_url, epochs)", key)
 	}
 
-	v.Set(key, value)
+	viper.Set(key, value)
 
 	configPath, err := configFilePath()
 	if err != nil {
 		return err
 	}
 
-	if err := v.WriteConfigAs(configPath); err != nil {
-		// If the config file doesn't exist yet, create it
-		if os.IsNotExist(err) {
-			if err := v.SafeWriteConfigAs(configPath); err != nil {
-				return fmt.Errorf("write config: %w", err)
-			}
-		} else {
+	// viper.WriteConfig will fail if the file doesn't exist; SafeWriteConfig creates it
+	if _, statErr := os.Stat(configPath); os.IsNotExist(statErr) {
+		if err := viper.SafeWriteConfigAs(configPath); err != nil {
+			return fmt.Errorf("write config: %w", err)
+		}
+	} else {
+		if err := viper.WriteConfigAs(configPath); err != nil {
 			return fmt.Errorf("write config: %w", err)
 		}
 	}
@@ -148,5 +139,5 @@ func configFilePath() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("get home dir: %w", err)
 	}
-	return filepath.Join(home, configDir, configFile+".yaml"), nil
+	return filepath.Join(home, configDirName, configFileName+".yaml"), nil
 }

@@ -3,10 +3,13 @@
 package ollama
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 const (
@@ -176,6 +179,92 @@ func expandHome(path string) (string, error) {
 		return home, nil
 	}
 	return filepath.Join(home, path[2:]), nil // skip "~/"
+}
+
+// ListEntry represents a single model:tag found in the Ollama manifest registry.
+type ListEntry struct {
+	Model     string
+	Tag       string
+	ModelTag  string    // "model:tag"
+	ID        string    // first 12 hex chars of manifest sha256
+	Size      int64     // total size of all blobs in bytes
+	BlobCount int
+	Modified  time.Time // manifest file modification time
+}
+
+// ListModels walks the Ollama manifest registry and returns all available models.
+func (s *Store) ListModels() ([]ListEntry, error) {
+	manifestsDir := s.ManifestsDir()
+
+	var entries []ListEntry
+
+	// Walk registry.ollama.ai/library/<model>/<tag>
+	modelDirs, err := os.ReadDir(manifestsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil // No models yet
+		}
+		return nil, fmt.Errorf("read manifests dir %s: %w", manifestsDir, err)
+	}
+
+	for _, modelDir := range modelDirs {
+		if !modelDir.IsDir() {
+			continue
+		}
+		model := modelDir.Name()
+
+		tagFiles, err := os.ReadDir(filepath.Join(manifestsDir, model))
+		if err != nil {
+			continue // skip unreadable model dirs
+		}
+
+		for _, tagFile := range tagFiles {
+			if tagFile.IsDir() {
+				continue
+			}
+			tag := tagFile.Name()
+			manifestPath := filepath.Join(manifestsDir, model, tag)
+
+			entry, err := s.ReadManifest(model + ":" + tag)
+			if err != nil {
+				continue // skip unreadable manifests
+			}
+
+			// Compute ID: first 12 hex chars of sha256 of raw manifest bytes
+			h := sha256.Sum256(entry.Raw)
+			id := hex.EncodeToString(h[:])[:12]
+
+			// Get modification time from the manifest file
+			info, err := os.Stat(manifestPath)
+			var modTime time.Time
+			if err == nil {
+				modTime = info.ModTime()
+			}
+
+			var totalSize int64
+			blobCount := 0
+			if entry.Config != nil {
+				totalSize += entry.Config.Size
+				blobCount++
+			}
+			for _, layer := range entry.Layers {
+				totalSize += layer.Size
+				blobCount++
+			}
+
+			entries = append(entries, ListEntry{
+				Model:     model,
+				Tag:       tag,
+				ModelTag:  model + ":" + tag,
+				ID:        id,
+				Size:      totalSize,
+				BlobCount: blobCount,
+				Modified:  modTime,
+			})
+		}
+	}
+
+	return entries, nil
 }
 
 func lastIndexByte(s string, c byte) int {
