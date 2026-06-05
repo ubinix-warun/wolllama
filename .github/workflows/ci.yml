@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    tags: ["v*"]
+
+jobs:
+  # ---- PR checks ----
+  lint-and-test:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: |
+          cd site && npm ci
+          cd cli && go mod download
+          cd ../api && go mod download
+          cd ../pkg && go mod download
+
+      - name: Lint Go
+        uses: golangci/golangci-lint-action@v6
+        with:
+          working-directory: .
+
+      - name: Test Go
+        run: go test ./cli/... ./api/... ./pkg/...
+
+      - name: Lint TypeScript
+        run: cd site && npm run lint
+
+      - name: Test TypeScript
+        run: cd site && npx vitest --run
+
+      - name: Build site
+        run: cd site && npm run build
+
+      - name: Copy site build into API
+        run: cp -r site/dist api/site/dist
+
+      - name: Build API (with embedded site)
+        run: go build -C api -o wolllama-api .
+
+      - name: Build CLI
+        run: go build -C cli -o wolllama .
+
+  # ---- Release ----
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install site dependencies
+        run: cd site && npm ci
+
+      - name: Build site
+        run: cd site && npm run build
+
+      - name: Copy site build into API
+        run: cp -r site/dist api/site/dist
+
+      - name: Build API
+        run: go build -C api -o wolllama-api .
+
+      - name: Run GoReleaser (CLI)
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean --config .goreleaser.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

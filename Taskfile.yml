@@ -1,0 +1,141 @@
+# Wolllama monorepo taskfile
+# https://taskfile.dev
+#
+# Usage:
+#   task build      Build everything
+#   task test       Run all tests
+#   task dev        Start dev servers
+#   task lint       Lint all code
+
+version: "3"
+
+vars:
+  API_BIN: api/wolllama-api
+  CLI_BIN: cli/wolllama
+
+tasks:
+  # ---- Build ----
+
+  build:
+    desc: Build CLI and API (with embedded site)
+    cmds:
+      - task: build-site
+      - task: build-api
+      - task: build-cli
+
+  build-cli:
+    desc: Build the CLI binary
+    dir: cli
+    cmds:
+      - go build -o wolllama .
+
+  build-api:
+    desc: Build the API binary (embeds site/dist)
+    cmds:
+      - rm -rf api/site/dist
+      - mkdir -p api/site/dist
+      - cp -r site/dist/* api/site/dist/
+      - go build -C api -o wolllama-api .
+
+  build-site:
+    desc: Build the React site for production
+    dir: site
+    cmds:
+      - npm run build
+
+  # ---- Development ----
+
+  dev:
+    desc: Start both API and site dev servers
+    cmds:
+      - task: dev-api
+      - task: dev-site
+
+  dev-api:
+    desc: Start the API server (port 8080)
+    dir: api
+    cmds:
+      - go run . 
+    env:
+      PORT: "8080"
+
+  dev-site:
+    desc: Start the Vite dev server (port 5173, proxies /api to 8080)
+    dir: site
+    cmds:
+      - npm run dev
+
+  # ---- Testing ----
+
+  test:
+    desc: Run all tests
+    cmds:
+      - task: test-go
+      - task: test-site
+
+  test-go:
+    desc: Run Go tests across all modules
+    cmds:
+      - go test ./cli/... ./api/... ./pkg/...
+
+  test-go-integration:
+    desc: Run Go integration tests (real Walrus testnet)
+    cmds:
+      - go test -tags=integration ./cli/... ./api/... ./pkg/...
+
+  test-site:
+    desc: Run frontend component tests
+    dir: site
+    cmds:
+      - npm run test -- --run
+
+  # ---- Linting ----
+
+  lint:
+    desc: Lint all code
+    cmds:
+      - task: lint-go
+      - task: lint-site
+
+  lint-go:
+    desc: Lint Go code
+    cmds:
+      - golangci-lint run ./...
+
+  lint-site:
+    desc: Lint TypeScript
+    dir: site
+    cmds:
+      - npm run lint
+
+  # ---- Code Quality ----
+
+  fmt:
+    desc: Format all code
+    cmds:
+      - gofmt -w ./cli ./api ./pkg
+      - cd site && npm run format 2>/dev/null || true
+
+  tidy:
+    desc: Tidy Go modules
+    cmds:
+      - cd cli && go mod tidy
+      - cd api && go mod tidy
+      - cd pkg && go mod tidy
+
+  # ---- Clean ----
+
+  clean:
+    desc: Remove build artifacts
+    cmds:
+      - rm -rf cli/wolllama api/wolllama-api site/dist
+
+  # ---- Install ----
+
+  install:
+    desc: Install dependencies
+    cmds:
+      - cd site && npm install
+      - cd cli && go mod download
+      - cd api && go mod download
+      - cd pkg && go mod download
