@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -87,7 +88,7 @@ type cachedModel struct {
 	objID string
 }
 
-// listCachedManifests reads ~/.wolllama/manifests/ for previously pulled models.
+// listCachedManifests reads ~/.wolllama/manifests/ for pulled/pushed models.
 func listCachedManifests() ([]cachedModel, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -106,8 +107,25 @@ func listCachedManifests() ([]cachedModel, error) {
 			continue
 		}
 		objID := strings.TrimSuffix(entry.Name(), ".json")
+
+		// Parse the cached manifest to extract model name and size
+		data, err := os.ReadFile(cacheDir + "/" + entry.Name())
+		if err != nil {
+			continue
+		}
+
+		// Try wolllama manifest first
+		var wm struct {
+			Name string `json:"name"`
+			Blobs map[string]string `json:"blobs"`
+		}
+		name := "(cached)"
+		if err := json.Unmarshal(data, &wm); err == nil && wm.Name != "" {
+			name = wm.Name
+		}
+
 		cached = append(cached, cachedModel{
-			name:  "(cached)",
+			name:  name,
 			objID: objID[:20] + "...",
 		})
 	}
