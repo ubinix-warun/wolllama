@@ -34,7 +34,8 @@ tasks:
     cmds:
       - rm -rf api/site/dist
       - mkdir -p api/site/dist
-      - cp -r site/dist/* api/site/dist/
+      - cp site/dist/index.html site/dist/favicon.svg site/dist/icons.svg api/site/dist/
+      - cp -r site/dist/assets api/site/dist/
       - go build -C api -o wolllama-api .
 
   build-site:

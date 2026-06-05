@@ -19,7 +19,7 @@ type Model struct {
 	ID            int64     `json:"id"`
 	SubmitterID   int64     `json:"submitter_id"`
 	SubmitterName string    `json:"submitter_name,omitempty"`
-	AvatarURL     string    `json:"avatar_url,omitempty"`
+	AvatarURL     *string   `json:"avatar_url,omitempty"`
 	ManifestObjID string    `json:"manifest_obj_id"`
 	DisplayName   string    `json:"display_name"`
 	DescriptionMd *string   `json:"description_md,omitempty"`
@@ -27,6 +27,7 @@ type Model struct {
 	Tag           *string   `json:"tag,omitempty"`
 	TotalSize     *int64    `json:"total_size,omitempty"`
 	BlobCount     *int      `json:"blob_count,omitempty"`
+	ManifestJSON  *string   `json:"manifest_json,omitempty"`
 	Available     bool      `json:"available"`
 	CreatedAt     time.Time `json:"created_at"`
 }
@@ -78,6 +79,7 @@ func (db *DB) Migrate() error {
 		tag TEXT,
 		total_size INTEGER,
 		blob_count INTEGER,
+		manifest_json TEXT,
 		available BOOLEAN DEFAULT 1,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
@@ -140,10 +142,10 @@ func (db *DB) GetUserByID(id int64) (*User, error) {
 // CreateModel inserts a new model submission.
 func (db *DB) CreateModel(m *Model) error {
 	err := db.conn.QueryRow(`
-		INSERT INTO models (submitter_id, manifest_obj_id, display_name, description_md, original_name, tag, total_size, blob_count)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO models (submitter_id, manifest_obj_id, display_name, description_md, original_name, tag, total_size, blob_count, manifest_json)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		RETURNING id, created_at
-	`, m.SubmitterID, m.ManifestObjID, m.DisplayName, m.DescriptionMd, m.OriginalName, m.Tag, m.TotalSize, m.BlobCount).
+	`, m.SubmitterID, m.ManifestObjID, m.DisplayName, m.DescriptionMd, m.OriginalName, m.Tag, m.TotalSize, m.BlobCount, m.ManifestJSON).
 		Scan(&m.ID, &m.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("create model: %w", err)
@@ -158,7 +160,7 @@ func (db *DB) GetModelByID(id int64) (*Model, error) {
 		SELECT m.id, m.submitter_id, u.username, u.avatar_url,
 			   m.manifest_obj_id, m.display_name, m.description_md,
 			   m.original_name, m.tag, m.total_size, m.blob_count,
-			   m.available, m.created_at
+			   m.manifest_json, m.available, m.created_at
 		FROM models m
 		JOIN users u ON u.id = m.submitter_id
 		WHERE m.id = ?
@@ -166,7 +168,7 @@ func (db *DB) GetModelByID(id int64) (*Model, error) {
 		&m.ID, &m.SubmitterID, &m.SubmitterName, &m.AvatarURL,
 		&m.ManifestObjID, &m.DisplayName, &m.DescriptionMd,
 		&m.OriginalName, &m.Tag, &m.TotalSize, &m.BlobCount,
-		&m.Available, &m.CreatedAt,
+		&m.ManifestJSON, &m.Available, &m.CreatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -183,7 +185,7 @@ func (db *DB) ListModels(offset, limit int, search string) ([]Model, error) {
 		SELECT m.id, m.submitter_id, u.username, u.avatar_url,
 			   m.manifest_obj_id, m.display_name, m.description_md,
 			   m.original_name, m.tag, m.total_size, m.blob_count,
-			   m.available, m.created_at
+			   m.manifest_json, m.available, m.created_at
 		FROM models m
 		JOIN users u ON u.id = m.submitter_id
 		WHERE m.available = 1
@@ -209,7 +211,7 @@ func (db *DB) ListModels(offset, limit int, search string) ([]Model, error) {
 			&m.ID, &m.SubmitterID, &m.SubmitterName, &m.AvatarURL,
 			&m.ManifestObjID, &m.DisplayName, &m.DescriptionMd,
 			&m.OriginalName, &m.Tag, &m.TotalSize, &m.BlobCount,
-			&m.Available, &m.CreatedAt,
+			&m.ManifestJSON, &m.Available, &m.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan model: %w", err)
 		}
@@ -224,7 +226,7 @@ func (db *DB) ListModelsByUser(userID int64) ([]Model, error) {
 		SELECT m.id, m.submitter_id, u.username, u.avatar_url,
 			   m.manifest_obj_id, m.display_name, m.description_md,
 			   m.original_name, m.tag, m.total_size, m.blob_count,
-			   m.available, m.created_at
+			   m.manifest_json, m.available, m.created_at
 		FROM models m
 		JOIN users u ON u.id = m.submitter_id
 		WHERE m.submitter_id = ?
@@ -242,7 +244,7 @@ func (db *DB) ListModelsByUser(userID int64) ([]Model, error) {
 			&m.ID, &m.SubmitterID, &m.SubmitterName, &m.AvatarURL,
 			&m.ManifestObjID, &m.DisplayName, &m.DescriptionMd,
 			&m.OriginalName, &m.Tag, &m.TotalSize, &m.BlobCount,
-			&m.Available, &m.CreatedAt,
+			&m.ManifestJSON, &m.Available, &m.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan model: %w", err)
 		}

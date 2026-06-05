@@ -134,7 +134,11 @@ func runPull(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("write blob %s: %w", shortDigest(digest), err)
 		}
 
-		fmt.Println("✓")
+		if ref.IsChunked() {
+			fmt.Println("✓ checksum verified")
+		} else {
+			fmt.Println("✓")
+		}
 		if verbose {
 			fmt.Printf("      digest: %s (verified)\n      size:   %s\n", digest, formatBytes(int64(len(blobData))))
 		}

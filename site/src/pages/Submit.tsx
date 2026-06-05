@@ -1,6 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { getMe, submitModel, getLoginUrl, type User } from "../lib/api";
+
+interface ManifestPreview {
+  manifest_obj_id: string;
+  name: string;
+  tag: string;
+  blob_count: number;
+  total_size: number;
+}
 
 export function SubmitPage() {
   const [user, setUser] = useState<User | null>(null);
@@ -9,6 +17,10 @@ export function SubmitPage() {
   const [descriptionMd, setDescriptionMd] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<ManifestPreview | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -16,6 +28,42 @@ export function SubmitPage() {
       .then(setUser)
       .catch(() => {});
   }, []);
+
+  // Pre-fetch manifest info when object ID changes (debounced)
+  useEffect(() => {
+    if (!manifestObjId.trim()) {
+      setPreview(null);
+      setPreviewError(null);
+      return;
+    }
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+
+    debounceRef.current = setTimeout(async () => {
+      setPreviewing(true);
+      setPreviewError(null);
+      try {
+        const res = await fetch(`/api/manifest/preview?obj_id=${encodeURIComponent(manifestObjId.trim())}`);
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ error: "Unknown error" }));
+          throw new Error(err.error || `HTTP ${res.status}`);
+        }
+        const data: ManifestPreview = await res.json();
+        setPreview(data);
+        // Auto-fill display name from manifest if not user-edited yet
+        if (!displayName) {
+          setDisplayName(data.name);
+        }
+      } catch (err) {
+        setPreviewError(err instanceof Error ? err.message : "Failed to fetch manifest");
+        setPreview(null);
+      } finally {
+        setPreviewing(false);
+      }
+    }, 600); // 600ms debounce
+
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [manifestObjId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,6 +91,13 @@ export function SubmitPage() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const formatSize = (bytes: number) => {
+    if (bytes >= 1_000_000_000) return `${(bytes / 1_000_000_000).toFixed(1)} GB`;
+    if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(0)} MB`;
+    if (bytes >= 1_000) return `${(bytes / 1_000).toFixed(0)} KB`;
+    return `${bytes} B`;
   };
 
   if (!user) {
@@ -82,6 +137,37 @@ export function SubmitPage() {
           <p className="text-xs text-gray-500 mt-1">
             Paste the ID from the "wolllama push" output
           </p>
+
+          {/* Preview card */}
+          {previewing && (
+            <div className="mt-3 text-sm text-gray-400">Fetching manifest...</div>
+          )}
+          {previewError && (
+            <div className="mt-3 text-sm text-red-400">⚠ {previewError}</div>
+          )}
+          {preview && (
+            <div className="mt-3 bg-[#1a1a2e] border border-[#333] rounded-lg p-3 text-sm">
+              <div className="text-green-400 font-mono text-xs mb-2">✓ Manifest found on Walrus</div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <span className="text-gray-500">Model:</span>{" "}
+                  <span className="text-white">{preview.name}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Size:</span>{" "}
+                  <span className="text-white">{formatSize(preview.total_size)}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Blobs:</span>{" "}
+                  <span className="text-white">{preview.blob_count}</span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Tag:</span>{" "}
+                  <span className="text-white">{preview.tag || "—"}</span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         <div>

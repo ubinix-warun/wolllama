@@ -1,23 +1,27 @@
 package main
 
 import (
+	"crypto/rand"
 	"embed"
+	"encoding/hex"
 	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/wolllama/api/auth"
 	"github.com/wolllama/api/db"
 	"github.com/wolllama/api/handler"
+	wwalrus "github.com/wolllama/pkg/walrus"
 )
 
 // siteFS embeds the built React SPA for production deployments.
 // In development, this embed will be empty (site/dist only gets populated
 // when the build script copies ../site/dist into api/site/dist).
 //
-//go:embed site/dist/*
+//go:embed site/dist
 var siteFS embed.FS
 
 func main() {
@@ -37,20 +41,54 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Auth
-	ghAuth, err := auth.NewGitHubOAuth()
-	if err != nil {
-		slog.Error("failed to configure GitHub OAuth", "error", err)
-		os.Exit(1)
+	// Auth mode: "open" (no auth), "token" (bearer token), or "github" (OAuth)
+	authMode := handler.AuthMode(os.Getenv("WOLLLAMA_AUTH_MODE"))
+	switch authMode {
+	case handler.AuthModeOpen:
+		slog.Info("auth mode: open (no authentication required)")
+	case handler.AuthModeToken:
+		slog.Info("auth mode: token (bearer token)")
+	default:
+		authMode = handler.AuthModeGitHub
 	}
 
+	// GitHub OAuth (only needed for github mode)
+	var ghAuth *auth.GitHubOAuth
+	if authMode == handler.AuthModeGitHub {
+		var err error
+		ghAuth, err = auth.NewGitHubOAuth()
+		if err != nil {
+			slog.Warn("GitHub OAuth not configured — falling back to open mode", "reason", err)
+			authMode = handler.AuthModeOpen
+			slog.Info("auth mode: open (no authentication required)")
+		}
+	}
+
+	apiToken := os.Getenv("WOLLLAMA_API_TOKEN")
+	if authMode == handler.AuthModeToken && apiToken == "" {
+		slog.Warn("token mode enabled but WOLLLAMA_API_TOKEN not set — generating a random token")
+		apiToken = randomToken()
+		slog.Info("use this token for API requests", "token", apiToken)
+	}
+
+	// Walrus client for manifest previews
+	aggURL := os.Getenv("WOLLLAMA_AGGREGATOR_URL")
+	if aggURL == "" {
+		aggURL = "https://aggregator.walrus-testnet.walrus.space"
+	}
+	walrusClient := wwalrus.NewClient(wwalrus.Config{
+		AggregatorURLs: []string{aggURL},
+	})
+
 	// Handlers
-	h := handler.New(database, ghAuth)
+	h := handler.New(database, ghAuth, authMode, apiToken, walrusClient)
 
 	// Routes
 	mux := http.NewServeMux()
 
 	// API routes
+	mux.HandleFunc("GET /api/blobs/{obj_id}", h.GetBlobContent)
+	mux.HandleFunc("GET /api/manifest/preview", h.PreviewManifest)
 	mux.HandleFunc("GET /api/models", h.ListModels)
 	mux.HandleFunc("GET /api/models/{id}", h.GetModel)
 	mux.HandleFunc("POST /api/models", h.SubmitModel)
@@ -74,8 +112,13 @@ func main() {
 		} else {
 			fileServer := http.FileServer(http.FS(spaFS))
 			mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-				// SPA fallback: serve index.html for unknown paths
-				if _, err := spaFS.Open(r.URL.Path); err != nil {
+				// SPA fallback: serve index.html for paths without a matching file.
+				// fs.FS paths must not start with "/" — strip before checking.
+				path := strings.TrimPrefix(r.URL.Path, "/")
+				if path == "" {
+					path = "."
+				}
+				if _, err := spaFS.Open(path); err != nil {
 					r.URL.Path = "/"
 				}
 				fileServer.ServeHTTP(w, r)
@@ -107,6 +150,12 @@ cd site && npm run dev
 		slog.Error("server error", "error", err)
 		os.Exit(1)
 	}
+}
+
+func randomToken() string {
+	b := make([]byte, 32)
+	rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 // hasEmbeddedSite checks whether the siteFS embed contains actual files.

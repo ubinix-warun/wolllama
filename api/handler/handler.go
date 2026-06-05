@@ -17,6 +17,8 @@ import (
 
 	"github.com/wolllama/api/auth"
 	"github.com/wolllama/api/db"
+	"github.com/wolllama/pkg/manifest"
+	wwalrus "github.com/wolllama/pkg/walrus"
 )
 
 const (
@@ -25,25 +27,120 @@ const (
 	oauthStateKey = "oauth_state"
 )
 
+// AuthMode controls how the API authenticates requests.
+type AuthMode string
+
+const (
+	AuthModeOpen   AuthMode = "open"   // No auth — everyone is an anonymous user
+	AuthModeToken  AuthMode = "token"  // Bearer token from WOLLLAMA_API_TOKEN
+	AuthModeGitHub AuthMode = "github" // GitHub OAuth (requires GITHUB_CLIENT_ID/SECRET)
+)
+
 // Handler holds shared dependencies for HTTP handlers.
 type Handler struct {
-	db   *db.DB
-	auth *auth.GitHubOAuth
-	store *sessions.CookieStore
+	db       *db.DB
+	auth     *auth.GitHubOAuth
+	store    *sessions.CookieStore
+	authMode AuthMode
+	apiToken string  // for token mode
+	anonUser *db.User // default user for open mode
+	walrus   *wwalrus.Client
 }
 
 // New creates a Handler.
-func New(database *db.DB, ghAuth *auth.GitHubOAuth) *Handler {
-	// Session key from env or random (random means sessions reset on restart — fine for v1)
+func New(database *db.DB, ghAuth *auth.GitHubOAuth, mode AuthMode, apiToken string, walrusClient *wwalrus.Client) *Handler {
 	key := []byte("wolllama-dev-key-change-in-production-32!")
-	return &Handler{
-		db:    database,
-		auth:  ghAuth,
-		store: sessions.NewCookieStore(key),
+	h := &Handler{
+		db:       database,
+		auth:     ghAuth,
+		store:    sessions.NewCookieStore(key),
+		authMode: mode,
+		apiToken: apiToken,
+		walrus:   walrusClient,
 	}
+
+	// For open mode, ensure a default anonymous user exists
+	if mode == AuthModeOpen {
+		u, err := database.CreateUser(0, "anonymous", nil)
+		if err == nil {
+			h.anonUser = u
+		}
+	}
+
+	return h
+}
+
+// ---- Blob proxy ----
+
+// GetBlobContent fetches blob content from Walrus and returns it.
+// Used by the frontend to display model config, license, and params.
+func (h *Handler) GetBlobContent(w http.ResponseWriter, r *http.Request) {
+	objID := r.PathValue("obj_id")
+	if objID == "" {
+		writeError(w, http.StatusBadRequest, "obj_id is required")
+		return
+	}
+
+	if h.walrus == nil {
+		writeError(w, http.StatusNotImplemented, "Walrus client not configured")
+		return
+	}
+
+	data, err := h.walrus.ReadBlob(objID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "blob not found on Walrus: "+err.Error())
+		return
+	}
+
+	// Return raw content — the frontend handles parsing based on media type
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Write(data)
 }
 
 // ---- Model handlers ----
+
+// PreviewManifest fetches a wolllama manifest from Walrus and returns a preview
+// of the model info (name, tag, size, blob count) without storing anything.
+func (h *Handler) PreviewManifest(w http.ResponseWriter, r *http.Request) {
+	objID := r.URL.Query().Get("obj_id")
+	if objID == "" {
+		writeError(w, http.StatusBadRequest, "obj_id query parameter is required")
+		return
+	}
+
+	if h.walrus == nil {
+		writeError(w, http.StatusNotImplemented, "Walrus client not configured")
+		return
+	}
+
+	// Fetch manifest from Walrus
+	data, err := h.walrus.ReadBlob(objID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "manifest not found on Walrus: "+err.Error())
+		return
+	}
+
+	// Parse and validate
+	var wm manifest.WolllamaManifest
+	if err := json.Unmarshal(data, &wm); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid wolllama manifest: "+err.Error())
+		return
+	}
+
+	summary, err := wm.Parse()
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "failed to parse manifest: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"manifest_obj_id": objID,
+		"name":            summary.Name,
+		"tag":             summary.Tag,
+		"blob_count":      summary.BlobCount,
+		"total_size":      summary.TotalSize,
+	})
+}
 
 // ListModels returns a paginated list of public models.
 func (h *Handler) ListModels(w http.ResponseWriter, r *http.Request) {
@@ -62,6 +159,9 @@ func (h *Handler) ListModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if models == nil {
+		models = []db.Model{}
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"models": models,
 		"offset": offset,
@@ -117,14 +217,57 @@ func (h *Handler) SubmitModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: fetch and validate Wolllama manifest from Walrus (sync validation)
-	// For now, create the entry directly
+	// Fetch and validate Wolllama manifest from Walrus (sync validation)
+	var blobCount *int
+	var totalSize *int64
+	var originalName, tag, manifestJSON *string
+
+	if h.walrus != nil {
+		data, err := h.walrus.ReadBlob(req.ManifestObjID)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "manifest not found on Walrus: "+err.Error())
+			return
+		}
+
+		var wm manifest.WolllamaManifest
+		if err := json.Unmarshal(data, &wm); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid wolllama manifest: "+err.Error())
+			return
+		}
+
+		if err := wm.Validate(); err != nil {
+			writeError(w, http.StatusBadRequest, "manifest validation failed: "+err.Error())
+			return
+		}
+
+		summary, err := wm.Parse()
+		if err == nil {
+			bc := summary.BlobCount
+			blobCount = &bc
+			ts := summary.TotalSize
+			totalSize = &ts
+			if summary.Name != "" {
+				originalName = &summary.Name
+			}
+			if summary.Tag != "" {
+				tag = &summary.Tag
+			}
+		}
+		// Store raw manifest JSON for detail page blob display
+		raw := string(data)
+		manifestJSON = &raw
+	}
 
 	model := &db.Model{
 		SubmitterID:   userID,
 		ManifestObjID: req.ManifestObjID,
 		DisplayName:   req.DisplayName,
 		DescriptionMd: req.DescriptionMd,
+		OriginalName:   originalName,
+		Tag:            tag,
+		TotalSize:     totalSize,
+		BlobCount:     blobCount,
+		ManifestJSON:  manifestJSON,
 	}
 
 	if err := h.db.CreateModel(model); err != nil {
@@ -155,6 +298,9 @@ func (h *Handler) UserModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if models == nil {
+		models = []db.Model{}
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"models": models,
 	})
@@ -162,8 +308,27 @@ func (h *Handler) UserModels(w http.ResponseWriter, r *http.Request) {
 
 // ---- Auth handlers ----
 
-// Login redirects to GitHub OAuth.
+// Login redirects to GitHub OAuth (or returns auth mode info for non-GitHub modes).
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
+	if h.authMode == AuthModeOpen {
+		writeJSON(w, http.StatusOK, map[string]string{
+			"mode":    "open",
+			"message": "No authentication required — you are already signed in as anonymous.",
+		})
+		return
+	}
+	if h.authMode == AuthModeToken {
+		writeJSON(w, http.StatusOK, map[string]string{
+			"mode":    "token",
+			"message": "Include Authorization: Bearer <token> header with your requests.",
+		})
+		return
+	}
+	if h.auth == nil {
+		writeError(w, http.StatusNotImplemented, "GitHub OAuth is not configured. Set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET.")
+		return
+	}
+
 	state, err := generateState()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to generate state")
@@ -187,6 +352,11 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 
 // Callback handles the GitHub OAuth callback.
 func (h *Handler) Callback(w http.ResponseWriter, r *http.Request) {
+	if h.auth == nil {
+		writeError(w, http.StatusNotImplemented, "GitHub OAuth is not configured.")
+		return
+	}
+
 	// Verify state
 	stateCookie, err := r.Cookie(oauthStateKey)
 	if err != nil {
@@ -258,6 +428,14 @@ func (h *Handler) Callback(w http.ResponseWriter, r *http.Request) {
 
 // Me returns the currently authenticated user.
 func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
+	if h.authMode == AuthModeOpen {
+		writeJSON(w, http.StatusOK, map[string]string{
+			"mode":    "open",
+			"message": "No authentication required.",
+		})
+		return
+	}
+
 	userID := h.requireAuth(w, r)
 	if userID == 0 {
 		return
@@ -278,15 +456,39 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 
 // ---- Helpers ----
 
-// requireAuth extracts the user ID from the session cookie. Returns 0 if not authenticated.
+// requireAuth extracts the user ID based on the configured auth mode.
 func (h *Handler) requireAuth(w http.ResponseWriter, r *http.Request) int64 {
-	session, _ := h.store.Get(r, sessionName)
-	userID, ok := session.Values[sessionKey].(int64)
-	if !ok || userID == 0 {
-		writeError(w, http.StatusUnauthorized, "authentication required")
+	switch h.authMode {
+	case AuthModeOpen:
+		if h.anonUser != nil {
+			return h.anonUser.ID
+		}
+		writeError(w, http.StatusInternalServerError, "anonymous user not initialized")
 		return 0
+
+	case AuthModeToken:
+		token := r.Header.Get("Authorization")
+		token = strings.TrimPrefix(token, "Bearer ")
+		if token == "" || token != h.apiToken {
+			writeError(w, http.StatusUnauthorized, "invalid or missing API token")
+			return 0
+		}
+		// Use anonymous user for token auth
+		if h.anonUser != nil {
+			return h.anonUser.ID
+		}
+		writeError(w, http.StatusInternalServerError, "anonymous user not initialized")
+		return 0
+
+	default: // AuthModeGitHub
+		session, _ := h.store.Get(r, sessionName)
+		userID, ok := session.Values[sessionKey].(int64)
+		if !ok || userID == 0 {
+			writeError(w, http.StatusUnauthorized, "authentication required — sign in with GitHub")
+			return 0
+		}
+		return userID
 	}
-	return userID
 }
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {

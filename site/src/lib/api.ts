@@ -31,6 +31,7 @@ export interface Model {
   tag?: string;
   total_size?: number;
   blob_count?: number;
+  manifest_json?: string;
   available: boolean;
   created_at: string;
 }
