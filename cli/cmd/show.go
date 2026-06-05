@@ -99,8 +99,12 @@ func runShow(cmd *cobra.Command, args []string) error {
 		case b.MediaType == "application/vnd.ollama.image.params":
 			kind = "params"
 		}
+		refStr := b.WalrusIDs[0]
+		if len(b.WalrusIDs) > 1 {
+			refStr = fmt.Sprintf("%d chunks", len(b.WalrusIDs))
+		}
 		fmt.Printf("    %s (%s)  %s  → %s\n",
-			shortDigest(b.Digest), kind, formatBytes(b.Size), b.WalrusObjID)
+			shortDigest(b.Digest), kind, formatBytes(b.Size), refStr)
 	}
 
 	fmt.Println()

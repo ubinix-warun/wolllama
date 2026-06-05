@@ -74,7 +74,11 @@ func runList(cmd *cobra.Command, args []string) error {
 		w2 := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 		fmt.Fprintln(w2, "NAME\tSIZE\tMANIFEST ID")
 		for _, c := range cached {
-			fmt.Fprintf(w2, "%s\t%s\t%s\n", c.name, formatBytes(c.size), c.objID)
+			shortID := c.objID
+		if len(shortID) > 20 {
+			shortID = shortID[:20] + "..."
+		}
+		fmt.Fprintf(w2, "%s\t%s\t%s\n", c.name, formatBytes(c.size), shortID)
 		}
 		w2.Flush()
 	}
@@ -108,25 +112,43 @@ func listCachedManifests() ([]cachedModel, error) {
 		}
 		objID := strings.TrimSuffix(entry.Name(), ".json")
 
-		// Parse the cached manifest to extract model name and size
 		data, err := os.ReadFile(cacheDir + "/" + entry.Name())
 		if err != nil {
 			continue
 		}
 
-		// Try wolllama manifest first
+		// Parse the full wolllama manifest
 		var wm struct {
-			Name string `json:"name"`
-			Blobs map[string]string `json:"blobs"`
+			Name           string `json:"name"`
+			OllamaManifest json.RawMessage `json:"ollamaManifest"`
+			Blobs          map[string]struct {
+				Single string   `json:"single"`
+				Chunks []string `json:"chunks"`
+			} `json:"blobs"`
 		}
-		name := "(cached)"
-		if err := json.Unmarshal(data, &wm); err == nil && wm.Name != "" {
-			name = wm.Name
+		if err := json.Unmarshal(data, &wm); err != nil || wm.Name == "" {
+			continue
+		}
+
+		// Extract size from embedded Ollama manifest
+		var om struct {
+			Config *struct{ Size int64 } `json:"config"`
+			Layers []struct{ Size int64 } `json:"layers"`
+		}
+		var totalSize int64
+		if err := json.Unmarshal(wm.OllamaManifest, &om); err == nil {
+			if om.Config != nil {
+				totalSize += om.Config.Size
+			}
+			for _, l := range om.Layers {
+				totalSize += l.Size
+			}
 		}
 
 		cached = append(cached, cachedModel{
-			name:  name,
-			objID: objID[:20] + "...",
+			name:  wm.Name,
+			size:  totalSize,
+			objID: objID,
 		})
 	}
 	return cached, nil

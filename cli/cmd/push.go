@@ -93,49 +93,74 @@ func runPush(cmd *cobra.Command, args []string) error {
 		modelTag, len(blobs), formatBytes(totalSize(blobs)))
 
 	// --- 4. Upload blobs sequentially ---
-	blobMap := make(map[string]string, len(blobs)) // digest → walrus object ID
+	// Blobs > 500 MB are split into 256 MB chunks to work around Walrus aggregator limit.
+	const maxBlobSize = 500_000_000
+	const chunkSize = 256_000_000
+
+	blobMap := make(map[string]manifest.BlobRef, len(blobs)) // digest → walrus reference
 	for i, b := range blobs {
-		fmt.Printf("[%d/%d] %s (%s)... ", i+1, len(blobs), shortDigest(b.digest), formatBytes(b.size))
-
 		label := fmt.Sprintf("[%d/%d] %s", i+1, len(blobs), shortDigest(b.digest))
-		var objID string
 
-		if b.size < 1_000_000 {
-			// Small blobs (config, license, params): upload in-memory
+		if b.size <= maxBlobSize {
+			// Single upload for blobs within Walrus limit
 			fmt.Fprintf(os.Stderr, "%s (%s)... ", label, formatBytes(b.size))
 			data, err := store.ReadBlob(b.digest)
 			if err != nil {
 				return fmt.Errorf("read blob %s: %w", shortDigest(b.digest), err)
 			}
-			objID, err = walrusClient.StoreBlob(data, epochs)
+			objID, err := walrusClient.StoreBlob(data, epochs)
 			if err != nil {
 				return fmt.Errorf("upload blob %s: %w", shortDigest(b.digest), err)
 			}
-			fmt.Fprintf(os.Stderr, "✓\n")
+			blobMap[b.digest] = manifest.BlobRef{Single: objID}
+			fmt.Fprintf(os.Stderr, "✓ %s\n", shortObjID(objID))
 		} else {
-			// Large blobs (model): upload with elapsed time
-			fmt.Fprintf(os.Stderr, "%s (%s) uploading...", label, formatBytes(b.size))
-			start := time.Now()
+			// Chunked upload for large blobs (> 500 MB)
+			numChunks := int((b.size + chunkSize - 1) / chunkSize)
+			fmt.Fprintf(os.Stderr, "%s (%s, %d chunks) uploading...\n", label, formatBytes(b.size), numChunks)
 
 			blobPath := store.BlobPath(b.digest)
 			f, err := os.Open(blobPath)
 			if err != nil {
 				return fmt.Errorf("open blob %s: %w", shortDigest(b.digest), err)
 			}
-			objID, err = walrusClient.StoreBlobFromReader(f, epochs)
-			f.Close()
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "\n")
-				return fmt.Errorf("upload blob %s: %w", shortDigest(b.digest), err)
+
+			var chunkIDs []string
+			for chunkIdx := 0; chunkIdx < numChunks; chunkIdx++ {
+				start := int64(chunkIdx) * chunkSize
+				end := start + chunkSize
+				if end > b.size {
+					end = b.size
+				}
+				chunkLen := end - start
+
+				buf := make([]byte, chunkLen)
+				if _, err := f.ReadAt(buf, start); err != nil {
+					f.Close()
+					return fmt.Errorf("read chunk %d of %s: %w", chunkIdx, shortDigest(b.digest), err)
+				}
+
+				chunkLabel := fmt.Sprintf("  chunk %d/%d", chunkIdx+1, numChunks)
+				fmt.Fprintf(os.Stderr, "%s (%s)... ", chunkLabel, formatBytes(chunkLen))
+				startTime := time.Now()
+
+				chunkID, err := walrusClient.StoreBlob(buf, epochs)
+				if err != nil {
+					f.Close()
+					return fmt.Errorf("upload chunk %d of %s: %w", chunkIdx, shortDigest(b.digest), err)
+				}
+				chunkIDs = append(chunkIDs, chunkID)
+				elapsed := time.Since(startTime).Round(time.Second)
+				fmt.Fprintf(os.Stderr, "✓ %s (%s)\n", shortObjID(chunkID), elapsed)
 			}
-			elapsed := time.Since(start).Round(time.Second)
-			fmt.Fprintf(os.Stderr, "\r%s ✓ %s (%s)\n", label, shortObjID(objID), elapsed)
+			f.Close()
+
+			blobMap[b.digest] = manifest.BlobRef{Chunks: chunkIDs}
 		}
 
-		blobMap[b.digest] = objID
-
 		if verbose {
-			fmt.Printf("      digest: %s\n      objID:  %s\n", b.digest, objID)
+			ref := blobMap[b.digest]
+			fmt.Printf("      digest: %s\n      ref: %v\n", b.digest, ref.IDs())
 		}
 	}
 

@@ -1,8 +1,12 @@
 package cmd
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -70,16 +74,60 @@ func runPull(cmd *cobra.Command, args []string) error {
 
 	verbose := viper.GetBool("verbose")
 
-	// --- 4. Download each blob and write to Ollama store ---
+	// --- 4. Build digest → size map from the embedded Ollama manifest ---
+	blobSizes := make(map[string]int64)
+	if summary != nil {
+		for _, b := range summary.Blobs {
+			blobSizes[b.Digest] = b.Size
+		}
+	}
+
+	// --- 5. Download each blob and write to Ollama store ---
 	blobCount := len(wm.Blobs)
 	current := 0
-	for digest, objID := range wm.Blobs {
+	for digest, ref := range wm.Blobs {
 		current++
-		fmt.Printf("[%d/%d] %s (%s)... ", current, blobCount, shortDigest(digest), objIDStr(objID))
 
-		blobData, err := walrusClient.ReadBlob(objID)
-		if err != nil {
-			return fmt.Errorf("download blob %s: %w", shortDigest(digest), err)
+		var displayID string
+		if ref.IsChunked() {
+			displayID = fmt.Sprintf("%d chunks", len(ref.Chunks))
+		} else {
+			displayID = objIDStr(ref.Single)
+		}
+		fmt.Printf("[%d/%d] %s (%s)... ", current, blobCount, shortDigest(digest), displayID)
+
+		var blobData []byte
+		var err error
+
+		if ref.IsChunked() {
+			// Reassemble from chunks with per-chunk progress
+			blobSize := blobSizes[digest]
+			blobData = make([]byte, 0, blobSize)
+			fmt.Fprintf(os.Stderr, "\n")
+			for ci, chunkID := range ref.Chunks {
+				fmt.Fprintf(os.Stderr, "    chunk %d/%d %s... ", ci+1, len(ref.Chunks), objIDStr(chunkID))
+				chunk, err := walrusClient.ReadBlob(chunkID)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "\n")
+					return fmt.Errorf("download chunk %d of %s: %w", ci, shortDigest(digest), err)
+				}
+				blobData = append(blobData, chunk...)
+				fmt.Fprintf(os.Stderr, "✓ (%s)\n", formatBytes(int64(len(chunk))))
+			}
+		} else {
+			blobData, err = walrusClient.ReadBlob(ref.Single)
+			if err != nil {
+				return fmt.Errorf("download blob %s: %w", shortDigest(digest), err)
+			}
+		}
+
+		// Verify sha256 matches the digest key in the manifest
+		expectedHex := strings.TrimPrefix(digest, "sha256:")
+		actualHash := sha256.Sum256(blobData)
+		actualHex := hex.EncodeToString(actualHash[:])
+		if actualHex != expectedHex {
+			return fmt.Errorf("checksum mismatch for %s:\n  expected sha256:%s\n  got      sha256:%s",
+				shortDigest(digest), expectedHex[:16]+"...", actualHex[:16]+"...")
 		}
 
 		if err := store.WriteBlob(digest, blobData); err != nil {
@@ -88,7 +136,7 @@ func runPull(cmd *cobra.Command, args []string) error {
 
 		fmt.Println("✓")
 		if verbose {
-			fmt.Printf("      digest: %s\n      objID:  %s\n      size:   %s\n", digest, objID, formatBytes(int64(len(blobData))))
+			fmt.Printf("      digest: %s (verified)\n      size:   %s\n", digest, formatBytes(int64(len(blobData))))
 		}
 	}
 

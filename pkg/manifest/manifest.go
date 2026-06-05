@@ -11,15 +11,39 @@ import (
 )
 
 // WolllamaVersion is the current manifest schema version.
-const WolllamaVersion = 1
+// Version 2 adds chunked blob support for blobs > 500 MB (Walrus aggregator limit).
+const WolllamaVersion = 2
+
+// BlobRef is a reference to a blob on Walrus. Small blobs use a single object ID;
+// large blobs (> 500 MB) are split into chunks, each with its own object ID.
+type BlobRef struct {
+	// Single is the object ID for small blobs stored as a single Walrus object.
+	Single string `json:"single,omitempty"`
+	// Chunks contains object IDs for large blobs split into chunks.
+	Chunks []string `json:"chunks,omitempty"`
+}
+
+// IsChunked returns true if this blob is split across multiple Walrus objects.
+func (b BlobRef) IsChunked() bool { return len(b.Chunks) > 0 }
+
+// IDs returns all Walrus object IDs for this blob.
+func (b BlobRef) IDs() []string {
+	if b.IsChunked() {
+		return b.Chunks
+	}
+	if b.Single != "" {
+		return []string{b.Single}
+	}
+	return nil
+}
 
 // WolllamaManifest is the top-level manifest stored on Walrus.
 type WolllamaManifest struct {
-	WolllamaVersion int              `json:"wolllamaVersion"`
-	Name            string           `json:"name"`            // "model:tag", e.g. "llama3.2:3b-q4_K_M"
-	OllamaManifest  json.RawMessage  `json:"ollamaManifest"`  // Original Ollama manifest JSON (opaque)
-	Blobs           map[string]string `json:"blobs"`          // sha256 digest → walrus object ID
-	CreatedAt       time.Time        `json:"createdAt"`
+	WolllamaVersion int               `json:"wolllamaVersion"`
+	Name            string            `json:"name"`           // "model:tag", e.g. "llama3.2:3b-q4_K_M"
+	OllamaManifest  json.RawMessage   `json:"ollamaManifest"` // Original Ollama manifest JSON (opaque)
+	Blobs           map[string]BlobRef `json:"blobs"`         // sha256 digest → walrus object reference
+	CreatedAt       time.Time         `json:"createdAt"`
 }
 
 // OllamaManifest is the parsed structure of Ollama's internal manifest JSON.
@@ -49,10 +73,10 @@ type ModelSummary struct {
 
 // BlobInfo describes a single blob in the manifest.
 type BlobInfo struct {
-	Digest       string
-	MediaType    string
-	Size         int64
-	WalrusObjID  string
+	Digest      string
+	MediaType   string
+	Size        int64
+	WalrusIDs   []string // all Walrus object IDs (1 for small, N for chunked)
 }
 
 // Parse extracts metadata from the raw manifest without requiring the caller
@@ -78,24 +102,24 @@ func (m *WolllamaManifest) Parse() (*ModelSummary, error) {
 
 	// Config blob
 	if om.Config != nil {
-		objID := m.Blobs[om.Config.Digest]
+		ref := m.Blobs[om.Config.Digest]
 		summary.Blobs = append(summary.Blobs, BlobInfo{
-			Digest:      om.Config.Digest,
-			MediaType:   om.Config.MediaType,
-			Size:        om.Config.Size,
-			WalrusObjID: objID,
+			Digest:    om.Config.Digest,
+			MediaType: om.Config.MediaType,
+			Size:      om.Config.Size,
+			WalrusIDs: ref.IDs(),
 		})
 		totalSize += om.Config.Size
 	}
 
 	// Layer blobs
 	for _, layer := range om.Layers {
-		objID := m.Blobs[layer.Digest]
+		ref := m.Blobs[layer.Digest]
 		summary.Blobs = append(summary.Blobs, BlobInfo{
-			Digest:      layer.Digest,
-			MediaType:   layer.MediaType,
-			Size:        layer.Size,
-			WalrusObjID: objID,
+			Digest:    layer.Digest,
+			MediaType: layer.MediaType,
+			Size:      layer.Size,
+			WalrusIDs: ref.IDs(),
 		})
 		totalSize += layer.Size
 	}
@@ -140,7 +164,7 @@ func (m *WolllamaManifest) Validate() error {
 }
 
 // New creates a WolllamaManifest with defaults.
-func New(name string, ollamaManifest json.RawMessage, blobs map[string]string) *WolllamaManifest {
+func New(name string, ollamaManifest json.RawMessage, blobs map[string]BlobRef) *WolllamaManifest {
 	return &WolllamaManifest{
 		WolllamaVersion: WolllamaVersion,
 		Name:            name,

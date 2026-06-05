@@ -5,13 +5,21 @@ package walrus
 import (
 	"fmt"
 	"io"
+	"net/http"
 
 	walrusgo "github.com/namihq/walrus-go"
 )
 
+// DefaultChunkSize is the max single-request download size for Walrus aggregators.
+// The public aggregator caps at 500 MB; we use 256 MB chunks for safety.
+const DefaultChunkSize = 256 * 1024 * 1024 // 256 MB
+
 // Client wraps the walrus-go SDK client with wolllama-specific defaults.
 type Client struct {
-	inner *walrusgo.Client
+	inner          *walrusgo.Client
+	aggregatorURLs []string
+	publisherURLs  []string
+	httpClient     *http.Client
 }
 
 // Config holds Walrus connection parameters.
@@ -29,7 +37,12 @@ func NewClient(cfg Config) *Client {
 	if len(cfg.AggregatorURLs) > 0 {
 		opts = append(opts, walrusgo.WithAggregatorURLs(cfg.AggregatorURLs))
 	}
-	return &Client{inner: walrusgo.NewClient(opts...)}
+	return &Client{
+		inner:          walrusgo.NewClient(opts...),
+		aggregatorURLs: cfg.AggregatorURLs,
+		publisherURLs:  cfg.PublisherURLs,
+		httpClient:     &http.Client{},
+	}
 }
 
 // StoreBlob uploads data and returns the blob's object ID.
@@ -77,11 +90,108 @@ func (c *Client) StoreFile(path string, epochs int) (string, error) {
 	return "", fmt.Errorf("unexpected store response: no blob ID")
 }
 
-// ReadBlob downloads a blob by its object ID.
+// ReadBlob downloads a blob by its object ID. For blobs under 500 MB,
+// this uses a single request. For larger blobs, use ReadLargeBlob.
 func (c *Client) ReadBlob(blobID string) ([]byte, error) {
 	data, err := c.inner.Read(blobID, nil)
 	if err != nil {
 		return nil, fmt.Errorf("read blob %s: %w", blobID, err)
+	}
+	return data, nil
+}
+
+// ReadLargeBlob downloads a blob that exceeds the aggregator's 500 MB single-request
+// limit. It tries the publisher endpoint first (which serves both reads and writes),
+// then falls back to chunked Range requests on the aggregator.
+func (c *Client) ReadLargeBlob(blobID string, totalSize int64) ([]byte, error) {
+	// Collect all URLs to try: publisher first (no size limit for uploads, may serve reads),
+	// then aggregator fallback with chunked Range requests.
+	var urls []string
+	urls = append(urls, c.publisherURLs...)
+	urls = append(urls, c.aggregatorURLs...)
+
+	if len(urls) == 0 {
+		return nil, fmt.Errorf("no publisher or aggregator URLs configured")
+	}
+
+	// Try a single full download from each URL first (publisher may allow it)
+	for _, baseURL := range urls {
+		data, err := c.downloadFull(baseURL, blobID)
+		if err == nil {
+			return data, nil
+		}
+	}
+
+	// Fallback: chunked Range requests on aggregator
+	if len(c.aggregatorURLs) > 0 {
+		result := make([]byte, totalSize)
+		chunkSize := int64(DefaultChunkSize)
+
+		for offset := int64(0); offset < totalSize; offset += chunkSize {
+			end := offset + chunkSize - 1
+			if end >= totalSize {
+				end = totalSize - 1
+			}
+
+			chunk, err := c.downloadRange(c.aggregatorURLs[0], blobID, offset, end)
+			if err != nil {
+				return nil, fmt.Errorf("download range %d-%d: %w", offset, end, err)
+			}
+
+			copy(result[offset:], chunk)
+		}
+		return result, nil
+	}
+
+	return nil, fmt.Errorf("failed to download large blob %s from any endpoint", blobID)
+}
+
+// downloadFull fetches the complete blob from a specific base URL.
+func (c *Client) downloadFull(baseURL, blobID string) ([]byte, error) {
+	url := fmt.Sprintf("%s/v1/blobs/%s", baseURL, blobID)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	return io.ReadAll(resp.Body)
+}
+
+// downloadRange fetches a byte range from a specific base URL.
+func (c *Client) downloadRange(baseURL, blobID string, start, end int64) ([]byte, error) {
+	url := fmt.Sprintf("%s/v1/blobs/%s", baseURL, blobID)
+
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", start, end))
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
 	}
 	return data, nil
 }
