@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { SuiClientProvider, WalletProvider, createNetworkConfig } from "@mysten/dapp-kit";
+import { SuiClientProvider, WalletProvider } from "@mysten/dapp-kit";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { LandingPage } from "./pages/Landing";
@@ -12,26 +12,30 @@ import "@mysten/dapp-kit/dist/index.css";
 import "./index.css";
 
 const queryClient = new QueryClient();
-const { networkConfig } = createNetworkConfig({
-  testnet: { url: "https://fullnode.testnet.sui.io:443" } as any,
-  mainnet: { url: "https://fullnode.mainnet.sui.io:443" } as any,
-});
 
 function AppRoutes() {
-  const [suiNetwork, setSuiNetwork] = useState<string>("testnet");
+  const [networks, setNetworks] = useState<Record<string, any>>({
+    testnet: { url: "https://fullnode.testnet.sui.io:443" },
+    mainnet: { url: "https://fullnode.mainnet.sui.io:443" },
+  });
+  const [defaultNetwork, setDefaultNetwork] = useState("testnet");
 
   useEffect(() => {
     fetch("/api/config")
       .then(r => r.json())
       .then(c => {
         const net = c.sui_network || c.walrus_network || "testnet";
-        if (net === "mainnet" || net === "testnet") setSuiNetwork(net);
+        const rpcUrl = c.sui_rpc_url;
+        if (rpcUrl) {
+          setNetworks({ [net]: { url: rpcUrl } });
+        }
+        setDefaultNetwork(net);
       })
       .catch(() => {});
   }, []);
 
   return (
-    <SuiClientProvider networks={networkConfig} defaultNetwork={suiNetwork as "testnet" | "mainnet"}>
+    <SuiClientProvider networks={networks} defaultNetwork={defaultNetwork}>
       <WalletProvider autoConnect>
         <BrowserRouter>
           <Routes>

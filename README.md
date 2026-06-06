@@ -21,6 +21,8 @@ wolllama pull O1ABCdef...xyz
 - **Chunked large files** — Auto-split blobs > 500 MB for Walrus compatibility
 - **SHA256 verification** — Every pulled blob is checksum-verified
 - **Web registry** — Browse, discover, and submit models at the Wolllama site
+- **Sui wallet auth** — Sign submissions with your Sui wallet (ed25519 verification)
+- **Multi-provider** — Walrus native, Tatum gateway, IPFS + S3 (planned)
 - **Open source** — MIT licensed
 
 ## Quick Start
@@ -78,14 +80,31 @@ wolllama config show
 ### Start the API + Site
 
 ```bash
-# No auth mode
+# Open mode — no auth, anonymous submissions
 WOLLLAMA_AUTH_MODE=open ./wolllama-api
 
-# With Walrus mainnet (for Tatum models)
+# Sui wallet mode — sign submissions with Sui wallet
+WOLLLAMA_AUTH_MODE=sui ./wolllama-api
+
+# With Walrus mainnet (for Tatum models / production)
 WOLLLAMA_AUTH_MODE=open WOLLLAMA_WALRUS_NETWORK=mainnet ./wolllama-api
+
+# Custom port + Sui testnet
+PORT=9090 WOLLLAMA_AUTH_MODE=sui WOLLLAMA_SUI_NETWORK=testnet ./wolllama-api
 ```
 
 Open `http://localhost:8080` — browse models, submit new ones, view blob details.
+
+#### API Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `WOLLLAMA_AUTH_MODE` | `open` | Auth mode: `open`, `sui`, `token`, `github` |
+| `WOLLLAMA_WALRUS_NETWORK` | `testnet` | Walrus network: `testnet`, `mainnet` |
+| `WOLLLAMA_SUI_NETWORK` | (walrus_network) | Sui network for wallet: `testnet`, `mainnet` |
+| `WOLLLAMA_AGGREGATOR_URL` | auto | Override Walrus aggregator URL |
+| `WOLLLAMA_API_TOKEN` | — | Bearer token for `token` auth mode |
+| `PORT` | `8080` | Listen port |
 
 ## Storage Providers
 

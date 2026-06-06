@@ -112,10 +112,12 @@ func main() {
 	// Health check
 	// Config endpoint — tells the frontend which network to use
 	mux.HandleFunc("GET /api/config", func(w http.ResponseWriter, r *http.Request) {
+		suiRPC := os.Getenv("WOLLLAMA_SUI_RPC_URL")
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"walrus_network":"%s","sui_network":"%s"}`,
+		fmt.Fprintf(w, `{"walrus_network":"%s","sui_network":"%s","sui_rpc_url":"%s"}`,
 			os.Getenv("WOLLLAMA_WALRUS_NETWORK"),
 			os.Getenv("WOLLLAMA_SUI_NETWORK"),
+			suiRPC,
 		)
 	})
 
