@@ -46,21 +46,22 @@ func main() {
 	switch authMode {
 	case handler.AuthModeOpen:
 		slog.Info("auth mode: open (no authentication required)")
+	case handler.AuthModeSui:
+		slog.Info("auth mode: sui (wallet signature on submission)")
 	case handler.AuthModeToken:
 		slog.Info("auth mode: token (bearer token)")
 	default:
-		authMode = handler.AuthModeGitHub
+		authMode = handler.AuthModeOpen
+		slog.Info("auth mode: open (default)")
 	}
 
-	// GitHub OAuth (only needed for github mode)
+	// GitHub OAuth (only initialized in github mode)
 	var ghAuth *auth.GitHubOAuth
 	if authMode == handler.AuthModeGitHub {
-		var err error
-		ghAuth, err = auth.NewGitHubOAuth()
-		if err != nil {
-			slog.Warn("GitHub OAuth not configured — falling back to open mode", "reason", err)
+		ghAuth, _ = auth.NewGitHubOAuth()
+		if ghAuth == nil {
+			slog.Warn("GitHub OAuth not configured — falling back to open mode")
 			authMode = handler.AuthModeOpen
-			slog.Info("auth mode: open (no authentication required)")
 		}
 	}
 
@@ -101,12 +102,23 @@ func main() {
 	mux.HandleFunc("GET /api/models", h.ListModels)
 	mux.HandleFunc("GET /api/models/{id}", h.GetModel)
 	mux.HandleFunc("POST /api/models", h.SubmitModel)
+	mux.HandleFunc("GET /api/auth/sui/nonce", h.SuiNonce)
+	mux.HandleFunc("POST /api/auth/sui/verify", h.SuiVerify)
 	mux.HandleFunc("GET /api/auth/login", h.Login)
 	mux.HandleFunc("GET /api/auth/callback", h.Callback)
 	mux.HandleFunc("GET /api/auth/me", h.Me)
 	mux.HandleFunc("GET /api/users/{id}/models", h.UserModels)
 
 	// Health check
+	// Config endpoint — tells the frontend which network to use
+	mux.HandleFunc("GET /api/config", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"walrus_network":"%s","sui_network":"%s"}`,
+			os.Getenv("WOLLLAMA_WALRUS_NETWORK"),
+			os.Getenv("WOLLLAMA_SUI_NETWORK"),
+		)
+	})
+
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"ok"}`))

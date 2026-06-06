@@ -18,27 +18,31 @@ type DB struct {
 type Model struct {
 	ID            int64     `json:"id"`
 	SubmitterID   int64     `json:"submitter_id"`
-	SubmitterName string    `json:"submitter_name,omitempty"`
-	AvatarURL     *string   `json:"avatar_url,omitempty"`
-	ManifestObjID string    `json:"manifest_obj_id"`
+	SubmitterName    string    `json:"submitter_name,omitempty"`
+	AvatarURL        *string   `json:"avatar_url,omitempty"`
+	WalletAddress    *string   `json:"wallet_address,omitempty"`
+	ManifestObjID    string    `json:"manifest_obj_id"`
 	DisplayName   string    `json:"display_name"`
 	DescriptionMd *string   `json:"description_md,omitempty"`
 	OriginalName  *string   `json:"original_name,omitempty"`
 	Tag           *string   `json:"tag,omitempty"`
 	TotalSize     *int64    `json:"total_size,omitempty"`
 	BlobCount     *int      `json:"blob_count,omitempty"`
-	ManifestJSON  *string   `json:"manifest_json,omitempty"`
-	Available     bool      `json:"available"`
+	ManifestJSON     *string   `json:"manifest_json,omitempty"`
+	SubmitterAddress *string   `json:"submitter_address,omitempty"`
+	Signature        *string   `json:"signature,omitempty"`
+	Available        bool      `json:"available"`
 	CreatedAt     time.Time `json:"created_at"`
 }
 
 // User represents a registered user.
 type User struct {
-	ID        int64     `json:"id"`
-	GitHubID  int64     `json:"github_id"`
-	Username  string    `json:"username"`
-	AvatarURL *string   `json:"avatar_url,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
+	ID            int64     `json:"id"`
+	GitHubID      int64     `json:"github_id"`
+	Username      string    `json:"username"`
+	AvatarURL     *string   `json:"avatar_url,omitempty"`
+	WalletAddress *string   `json:"wallet_address,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 // Open opens a SQLite database at the given path.
@@ -63,9 +67,10 @@ func (db *DB) Migrate() error {
 	schema := `
 	CREATE TABLE IF NOT EXISTS users (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		github_id INTEGER UNIQUE NOT NULL,
+		github_id INTEGER DEFAULT 0,
 		username TEXT NOT NULL,
 		avatar_url TEXT,
+		wallet_address TEXT UNIQUE,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 
@@ -80,6 +85,8 @@ func (db *DB) Migrate() error {
 		total_size INTEGER,
 		blob_count INTEGER,
 		manifest_json TEXT,
+		submitter_address TEXT,
+		signature TEXT,
 		available BOOLEAN DEFAULT 1,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
@@ -90,6 +97,48 @@ func (db *DB) Migrate() error {
 	`
 	_, err := db.conn.Exec(schema)
 	return err
+}
+
+// GetOrCreateAnonUser returns the anonymous user, creating one if it doesn't exist.
+func (db *DB) GetOrCreateAnonUser() (*User, error) {
+	// Try to find existing anonymous user
+	user := &User{}
+	err := db.conn.QueryRow(`
+		SELECT id, github_id, username, avatar_url, wallet_address, created_at
+		FROM users WHERE github_id = 0 AND username = 'anonymous'
+		LIMIT 1
+	`).Scan(&user.ID, &user.GitHubID, &user.Username, &user.AvatarURL, &user.WalletAddress, &user.CreatedAt)
+
+	if err == nil {
+		return user, nil
+	}
+
+	// Create one
+	err = db.conn.QueryRow(`
+		INSERT INTO users (github_id, username)
+		VALUES (0, 'anonymous')
+		RETURNING id, github_id, username, avatar_url, wallet_address, created_at
+	`).Scan(&user.ID, &user.GitHubID, &user.Username, &user.AvatarURL, &user.WalletAddress, &user.CreatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("create anon user: %w", err)
+	}
+	return user, nil
+}
+
+// CreateUserByWallet creates or looks up a user by Sui wallet address.
+func (db *DB) CreateUserByWallet(address string) (*User, error) {
+	username := "sui:" + address[:12] + "..."
+	user := &User{}
+	err := db.conn.QueryRow(`
+		INSERT INTO users (github_id, username, wallet_address)
+		VALUES (0, ?, ?)
+		ON CONFLICT(wallet_address) DO UPDATE SET username=excluded.username
+		RETURNING id, github_id, username, avatar_url, wallet_address, created_at
+	`, username, address).Scan(&user.ID, &user.GitHubID, &user.Username, &user.AvatarURL, &user.WalletAddress, &user.CreatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("create user by wallet: %w", err)
+	}
+	return user, nil
 }
 
 // CreateUser inserts a new user or returns the existing one.
@@ -142,10 +191,10 @@ func (db *DB) GetUserByID(id int64) (*User, error) {
 // CreateModel inserts a new model submission.
 func (db *DB) CreateModel(m *Model) error {
 	err := db.conn.QueryRow(`
-		INSERT INTO models (submitter_id, manifest_obj_id, display_name, description_md, original_name, tag, total_size, blob_count, manifest_json)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO models (submitter_id, manifest_obj_id, display_name, description_md, original_name, tag, total_size, blob_count, manifest_json, submitter_address, signature)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		RETURNING id, created_at
-	`, m.SubmitterID, m.ManifestObjID, m.DisplayName, m.DescriptionMd, m.OriginalName, m.Tag, m.TotalSize, m.BlobCount, m.ManifestJSON).
+	`, m.SubmitterID, m.ManifestObjID, m.DisplayName, m.DescriptionMd, m.OriginalName, m.Tag, m.TotalSize, m.BlobCount, m.ManifestJSON, m.SubmitterAddress, m.Signature).
 		Scan(&m.ID, &m.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("create model: %w", err)
@@ -157,18 +206,18 @@ func (db *DB) CreateModel(m *Model) error {
 func (db *DB) GetModelByID(id int64) (*Model, error) {
 	m := &Model{}
 	err := db.conn.QueryRow(`
-		SELECT m.id, m.submitter_id, u.username, u.avatar_url,
+		SELECT m.id, m.submitter_id, u.username, u.avatar_url, u.wallet_address,
 			   m.manifest_obj_id, m.display_name, m.description_md,
 			   m.original_name, m.tag, m.total_size, m.blob_count,
-			   m.manifest_json, m.available, m.created_at
+			   m.manifest_json, m.submitter_address, m.signature, m.available, m.created_at
 		FROM models m
 		JOIN users u ON u.id = m.submitter_id
 		WHERE m.id = ?
 	`, id).Scan(
-		&m.ID, &m.SubmitterID, &m.SubmitterName, &m.AvatarURL,
+		&m.ID, &m.SubmitterID, &m.SubmitterName, &m.AvatarURL, &m.WalletAddress,
 		&m.ManifestObjID, &m.DisplayName, &m.DescriptionMd,
 		&m.OriginalName, &m.Tag, &m.TotalSize, &m.BlobCount,
-		&m.ManifestJSON, &m.Available, &m.CreatedAt,
+		&m.ManifestJSON, &m.SubmitterAddress, &m.Signature, &m.Available, &m.CreatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -182,10 +231,10 @@ func (db *DB) GetModelByID(id int64) (*Model, error) {
 // ListModels returns a paginated list of available models.
 func (db *DB) ListModels(offset, limit int, search string) ([]Model, error) {
 	query := `
-		SELECT m.id, m.submitter_id, u.username, u.avatar_url,
+		SELECT m.id, m.submitter_id, u.username, u.avatar_url, u.wallet_address,
 			   m.manifest_obj_id, m.display_name, m.description_md,
 			   m.original_name, m.tag, m.total_size, m.blob_count,
-			   m.manifest_json, m.available, m.created_at
+			   m.manifest_json, m.submitter_address, m.signature, m.available, m.created_at
 		FROM models m
 		JOIN users u ON u.id = m.submitter_id
 		WHERE m.available = 1
@@ -208,10 +257,10 @@ func (db *DB) ListModels(offset, limit int, search string) ([]Model, error) {
 	for rows.Next() {
 		var m Model
 		if err := rows.Scan(
-			&m.ID, &m.SubmitterID, &m.SubmitterName, &m.AvatarURL,
+			&m.ID, &m.SubmitterID, &m.SubmitterName, &m.AvatarURL, &m.WalletAddress,
 			&m.ManifestObjID, &m.DisplayName, &m.DescriptionMd,
 			&m.OriginalName, &m.Tag, &m.TotalSize, &m.BlobCount,
-			&m.ManifestJSON, &m.Available, &m.CreatedAt,
+			&m.ManifestJSON, &m.SubmitterAddress, &m.Signature, &m.Available, &m.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan model: %w", err)
 		}
@@ -223,10 +272,10 @@ func (db *DB) ListModels(offset, limit int, search string) ([]Model, error) {
 // ListModelsByUser returns models submitted by a specific user.
 func (db *DB) ListModelsByUser(userID int64) ([]Model, error) {
 	rows, err := db.conn.Query(`
-		SELECT m.id, m.submitter_id, u.username, u.avatar_url,
+		SELECT m.id, m.submitter_id, u.username, u.avatar_url, u.wallet_address,
 			   m.manifest_obj_id, m.display_name, m.description_md,
 			   m.original_name, m.tag, m.total_size, m.blob_count,
-			   m.manifest_json, m.available, m.created_at
+			   m.manifest_json, m.submitter_address, m.signature, m.available, m.created_at
 		FROM models m
 		JOIN users u ON u.id = m.submitter_id
 		WHERE m.submitter_id = ?
@@ -241,10 +290,10 @@ func (db *DB) ListModelsByUser(userID int64) ([]Model, error) {
 	for rows.Next() {
 		var m Model
 		if err := rows.Scan(
-			&m.ID, &m.SubmitterID, &m.SubmitterName, &m.AvatarURL,
+			&m.ID, &m.SubmitterID, &m.SubmitterName, &m.AvatarURL, &m.WalletAddress,
 			&m.ManifestObjID, &m.DisplayName, &m.DescriptionMd,
 			&m.OriginalName, &m.Tag, &m.TotalSize, &m.BlobCount,
-			&m.ManifestJSON, &m.Available, &m.CreatedAt,
+			&m.ManifestJSON, &m.SubmitterAddress, &m.Signature, &m.Available, &m.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan model: %w", err)
 		}

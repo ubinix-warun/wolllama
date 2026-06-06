@@ -1,16 +1,14 @@
 import { Outlet, Link } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { getMe, getLoginUrl, type User } from "../lib/api";
+import { ConnectButton, useCurrentAccount } from "@mysten/dapp-kit";
+import { getAuthMode } from "../lib/api";
 
 export function Layout() {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const account = useCurrentAccount();
+  const [authMode, setAuthMode] = useState<string>("open");
 
   useEffect(() => {
-    getMe()
-      .then(setUser)
-      .catch(() => setUser(null))
-      .finally(() => setLoading(false));
+    getAuthMode().then(setAuthMode).catch(() => {});
   }, []);
 
   return (
@@ -24,28 +22,15 @@ export function Layout() {
           <Link to="/models" className="hover:text-white transition-colors">
             Models
           </Link>
-          {user ? (
-            <>
-              <Link to="/submit" className="hover:text-white transition-colors">
-                Submit
-              </Link>
-              <Link to="/profile" className="flex items-center gap-2 hover:text-white transition-colors">
-                {user.avatar_url && (
-                  <img src={user.avatar_url} alt="" className="w-5 h-5 rounded-full" />
-                )}
-                {user.username}
-              </Link>
-            </>
-          ) : (
-            !loading && (
-              <a
-                href={getLoginUrl()}
-                className="bg-white text-black px-3 py-1.5 rounded-md text-sm font-medium hover:bg-gray-200 transition-colors"
-              >
-                Sign in with GitHub
-              </a>
-            )
+          <Link to="/submit" className="hover:text-white transition-colors">
+            Submit
+          </Link>
+          {authMode === "sui" && account && (
+            <Link to="/profile" className="hover:text-white transition-colors">
+              {account.address.slice(0, 6)}...{account.address.slice(-4)}
+            </Link>
           )}
+          {authMode === "sui" && <ConnectButton />}
         </nav>
       </header>
 

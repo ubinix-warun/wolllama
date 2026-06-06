@@ -32,6 +32,7 @@ type AuthMode string
 
 const (
 	AuthModeOpen   AuthMode = "open"   // No auth — everyone is an anonymous user
+	AuthModeSui    AuthMode = "sui"    // Sui wallet signature required for submissions
 	AuthModeToken  AuthMode = "token"  // Bearer token from WOLLLAMA_API_TOKEN
 	AuthModeGitHub AuthMode = "github" // GitHub OAuth (requires GITHUB_CLIENT_ID/SECRET)
 )
@@ -59,15 +60,79 @@ func New(database *db.DB, ghAuth *auth.GitHubOAuth, mode AuthMode, apiToken stri
 		walrus:   walrusClient,
 	}
 
-	// For open mode, ensure a default anonymous user exists
-	if mode == AuthModeOpen {
-		u, err := database.CreateUser(0, "anonymous", nil)
-		if err == nil {
+	// For open/sui mode, ensure a default anonymous user exists
+	if mode == AuthModeOpen || mode == AuthModeSui {
+		u, err := database.GetOrCreateAnonUser()
+		if err != nil {
+			slog.Error("failed to create anonymous user", "error", err)
+		} else {
 			h.anonUser = u
 		}
 	}
 
 	return h
+}
+
+// ---- Sui auth ----
+
+// SuiNonce returns a random nonce for wallet signing.
+func (h *Handler) SuiNonce(w http.ResponseWriter, r *http.Request) {
+	nonce, err := auth.Nonce()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to generate nonce")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"nonce": nonce})
+}
+
+// SuiVerify verifies a Sui wallet signature and creates a session.
+func (h *Handler) SuiVerify(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Address   string `json:"address"`
+		PublicKey string `json:"public_key"` // base64 ed25519 public key
+		Signature string `json:"signature"`  // base64 ed25519 signature
+		Message   string `json:"message"`    // hex-encoded message that was signed
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+
+	if req.Address == "" || req.PublicKey == "" || req.Signature == "" || req.Message == "" {
+		writeError(w, http.StatusBadRequest, "address, public_key, signature, and message are required")
+		return
+	}
+
+	// Decode message from hex
+	msgBytes, err := hex.DecodeString(req.Message)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid message hex: "+err.Error())
+		return
+	}
+
+	// Verify signature
+	if err := auth.VerifySignature(req.PublicKey, req.Signature, msgBytes); err != nil {
+		writeError(w, http.StatusUnauthorized, "signature verification failed: "+err.Error())
+		return
+	}
+
+	// Create or update user by wallet address
+	user, err := h.db.CreateUserByWallet(req.Address)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create user")
+		slog.Error("create user by wallet", "error", err)
+		return
+	}
+
+	// Set session
+	session, _ := h.store.Get(r, sessionName)
+	session.Values[sessionKey] = user.ID
+	if err := session.Save(r, w); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to save session")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, user)
 }
 
 // ---- Blob proxy ----
@@ -199,9 +264,11 @@ func (h *Handler) SubmitModel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		ManifestObjID string  `json:"manifest_obj_id"`
-		DisplayName   string  `json:"display_name"`
-		DescriptionMd *string `json:"description_md"`
+		ManifestObjID    string  `json:"manifest_obj_id"`
+		DisplayName      string  `json:"display_name"`
+		DescriptionMd    *string `json:"description_md"`
+		SubmitterAddress *string `json:"submitter_address"`
+		Signature        *string `json:"signature"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
@@ -215,6 +282,18 @@ func (h *Handler) SubmitModel(w http.ResponseWriter, r *http.Request) {
 	if req.DisplayName == "" {
 		writeError(w, http.StatusBadRequest, "display_name is required")
 		return
+	}
+
+	// In Sui mode, wallet address + signature are required
+	if h.authMode == AuthModeSui {
+		if req.SubmitterAddress == nil || *req.SubmitterAddress == "" {
+			writeError(w, http.StatusBadRequest, "submitter_address is required in sui auth mode")
+			return
+		}
+		if req.Signature == nil || *req.Signature == "" {
+			writeError(w, http.StatusBadRequest, "signature is required in sui auth mode")
+			return
+		}
 	}
 
 	// Fetch and validate Wolllama manifest from Walrus (sync validation)
@@ -267,7 +346,9 @@ func (h *Handler) SubmitModel(w http.ResponseWriter, r *http.Request) {
 		Tag:            tag,
 		TotalSize:     totalSize,
 		BlobCount:     blobCount,
-		ManifestJSON:  manifestJSON,
+		ManifestJSON:     manifestJSON,
+		SubmitterAddress: req.SubmitterAddress,
+		Signature:        req.Signature,
 	}
 
 	if err := h.db.CreateModel(model); err != nil {
@@ -310,10 +391,10 @@ func (h *Handler) UserModels(w http.ResponseWriter, r *http.Request) {
 
 // Login redirects to GitHub OAuth (or returns auth mode info for non-GitHub modes).
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
-	if h.authMode == AuthModeOpen {
+	if h.authMode == AuthModeOpen || h.authMode == AuthModeSui {
 		writeJSON(w, http.StatusOK, map[string]string{
-			"mode":    "open",
-			"message": "No authentication required — you are already signed in as anonymous.",
+			"mode":    string(h.authMode),
+			"message": "Connect your Sui wallet to sign submissions.",
 		})
 		return
 	}
@@ -428,10 +509,10 @@ func (h *Handler) Callback(w http.ResponseWriter, r *http.Request) {
 
 // Me returns the currently authenticated user.
 func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
-	if h.authMode == AuthModeOpen {
+	if h.authMode == AuthModeOpen || h.authMode == AuthModeSui {
 		writeJSON(w, http.StatusOK, map[string]string{
-			"mode":    "open",
-			"message": "No authentication required.",
+			"mode":    string(h.authMode),
+			"message": "Authentication via Sui wallet signature on submission.",
 		})
 		return
 	}
@@ -459,7 +540,9 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 // requireAuth extracts the user ID based on the configured auth mode.
 func (h *Handler) requireAuth(w http.ResponseWriter, r *http.Request) int64 {
 	switch h.authMode {
-	case AuthModeOpen:
+	case AuthModeOpen, AuthModeSui:
+		// Open: anyone can submit. Sui: anyone can submit with wallet signature.
+		// The signature validation happens in SubmitModel.
 		if h.anonUser != nil {
 			return h.anonUser.ID
 		}

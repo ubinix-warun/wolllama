@@ -147,15 +147,34 @@ func (c *Client) ReadBlobByQuiltPatchID(quiltPatchID string) ([]byte, error) {
 	return io.ReadAll(resp.Body)
 }
 
-// ReadBlobWithFallback tries the regular blob endpoint first, then falls back
-// to quilt-patch (Tatum gateway). Use this when the blob ID might be either
-// a native Walrus blob ID or a Tatum quilt-patch ID.
+// ReadBlobWithFallback tries multiple endpoints to handle both native Walrus
+// blobs and Tatum-uploaded blobs. Fallback order:
+//   1. Regular /v1/blobs/{id}
+//   2. Quilt-patch /v1/blobs/by-quilt-patch-id/{id}  (Tatum quiltPatchIds with suffix)
+//   3. Quilt-id /v1/blobs/by-quilt-id/{id}/blob       (Tatum plain blobIds)
 func (c *Client) ReadBlobWithFallback(blobID string) ([]byte, error) {
 	data, err := c.ReadBlob(blobID)
-	if err != nil {
-		data, err = c.ReadBlobByQuiltPatchID(blobID)
+	if err != nil || isTatumWrapper(data) {
+		// Try quilt-patch (full quiltPatchId with suffix like ...BAQAEAA)
+		data2, err2 := c.ReadBlobByQuiltPatchID(blobID)
+		if err2 == nil && !isTatumWrapper(data2) {
+			return data2, nil
+		}
+		// Try quilt-id (plain blobId — works for Tatum blobs without suffix)
+		data3, err3 := c.ReadBlobByQuiltID(blobID)
+		if err3 == nil && !isTatumWrapper(data3) {
+			return data3, nil
+		}
+		// Return original error if all fallbacks failed
+		if err != nil {
+			return nil, err
+		}
 	}
-	return data, err
+	return data, nil
+}
+
+func isTatumWrapper(data []byte) bool {
+	return len(data) > 0 && data[0] == 0x01
 }
 
 // ReadBlob downloads a blob by its object ID. For blobs under 500 MB,

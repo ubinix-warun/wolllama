@@ -42,10 +42,19 @@ export function ModelDetailPage() {
             <h1 className="text-2xl font-bold text-white">{model.display_name}</h1>
             <p className="text-sm text-gray-400">
               by{" "}
-              <Link to={`/profile`} className="hover:text-white transition-colors">
-                {model.submitter_name}
-              </Link>
+              {model.submitter_address ? (
+                <span className="font-mono text-xs">
+                  {model.submitter_address.slice(0, 10)}...{model.submitter_address.slice(-6)}
+                </span>
+              ) : (
+                <span>{model.submitter_name || "anonymous"}</span>
+              )}
             </p>
+            {model.signature && (
+              <p className="text-xs text-green-400 mt-1">
+                ✓ Sui wallet signed
+              </p>
+            )}
           </div>
 
           {!model.available && (

@@ -15,7 +15,11 @@ export function ModelCard({ model }: { model: Model }) {
         )}
         <div className="min-w-0">
           <h3 className="text-white font-medium truncate">{model.display_name}</h3>
-          <p className="text-xs text-gray-500">{model.submitter_name}</p>
+          <p className="text-xs text-gray-500">
+            {model.submitter_address
+              ? `${model.submitter_address.slice(0, 6)}...${model.submitter_address.slice(-4)}`
+              : model.submitter_name || "anonymous"}
+          </p>
         </div>
         {!model.available && (
           <span className="ml-auto shrink-0 bg-red-900/50 text-red-400 text-xs px-1.5 py-0.5 rounded">

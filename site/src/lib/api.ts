@@ -31,6 +31,9 @@ export interface Model {
   tag?: string;
   total_size?: number;
   blob_count?: number;
+  wallet_address?: string;
+  submitter_address?: string;
+  signature?: string;
   manifest_json?: string;
   available: boolean;
   created_at: string;
@@ -70,18 +73,33 @@ export function getMe() {
   return request<User>("/auth/me");
 }
 
+export function getAuthMode() {
+  return fetch("/api/auth/login")
+    .then(r => r.json())
+    .then(d => (d as { mode: string }).mode)
+    .catch(() => "open");
+}
+
 export function getLoginUrl() {
   return `${API_BASE}/api/auth/login`;
 }
 
 // Authenticated
-export function submitModel(manifestObjId: string, displayName: string, descriptionMd?: string) {
+export function submitModel(
+  manifestObjId: string,
+  displayName: string,
+  descriptionMd?: string,
+  submitterAddress?: string,
+  signature?: string,
+) {
   return request<Model>("/models", {
     method: "POST",
     body: JSON.stringify({
       manifest_obj_id: manifestObjId,
       display_name: displayName,
       description_md: descriptionMd || null,
+      submitter_address: submitterAddress || null,
+      signature: signature || null,
     }),
   });
 }
