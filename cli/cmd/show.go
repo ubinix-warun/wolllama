@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 
 	"github.com/wolllama/pkg/manifest"
 	wwalrus "github.com/wolllama/pkg/walrus"
@@ -52,15 +51,22 @@ func runShow(cmd *cobra.Command, args []string) error {
 		}
 	} else {
 		// Fetch from Walrus
-		aggregatorURL := viper.GetString("aggregator_url")
+		_, aggURL := walrusURLs()
 		walrusClient := wwalrus.NewClient(wwalrus.Config{
-			AggregatorURLs: splitURLs(aggregatorURL),
+			AggregatorURLs: splitURLs(aggURL),
 		})
 
 		var err error
 		data, err = walrusClient.ReadBlob(manifestObjID)
 		if err != nil {
 			return fmt.Errorf("fetch manifest from Walrus: %w", err)
+		}
+		// Detect Tatum-wrapped blob and retry via quilt-id
+		if len(data) > 0 && data[0] == 0x01 {
+			data, err = walrusClient.ReadBlobByQuiltID(manifestObjID)
+			if err != nil {
+				return fmt.Errorf("fetch manifest via quilt-patch: %w", err)
+			}
 		}
 	}
 

@@ -90,6 +90,74 @@ func (c *Client) StoreFile(path string, epochs int) (string, error) {
 	return "", fmt.Errorf("unexpected store response: no blob ID")
 }
 
+// ReadBlobByQuiltID downloads a blob using the Walrus quilt-id endpoint.
+// Tatum-uploaded blobs are accessible at /v1/blobs/by-quilt-id/{blobId}/blob
+// even though the regular /v1/blobs/{blobId} returns a binary wrapper.
+func (c *Client) ReadBlobByQuiltID(blobID string) ([]byte, error) {
+	if len(c.aggregatorURLs) == 0 {
+		return nil, fmt.Errorf("no aggregator URLs configured")
+	}
+
+	url := fmt.Sprintf("%s/v1/blobs/by-quilt-id/%s/blob", c.aggregatorURLs[0], blobID)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("quilt-id request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("quilt-id download failed (HTTP %d): %s", resp.StatusCode, string(body))
+	}
+
+	return io.ReadAll(resp.Body)
+}
+
+// ReadBlobByQuiltPatchID downloads a blob using the Walrus quilt-patch endpoint.
+// This is used for blobs uploaded through Tatum's gateway, which wraps content
+// in a binary format on the regular /v1/blobs/{id} endpoint. The quilt-patch
+// endpoint returns the raw unwrapped content.
+func (c *Client) ReadBlobByQuiltPatchID(quiltPatchID string) ([]byte, error) {
+	if len(c.aggregatorURLs) == 0 {
+		return nil, fmt.Errorf("no aggregator URLs configured")
+	}
+
+	url := fmt.Sprintf("%s/v1/blobs/by-quilt-patch-id/%s", c.aggregatorURLs[0], quiltPatchID)
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("quilt-patch request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("quilt-patch download failed (HTTP %d): %s", resp.StatusCode, string(body))
+	}
+
+	return io.ReadAll(resp.Body)
+}
+
+// ReadBlobWithFallback tries the regular blob endpoint first, then falls back
+// to quilt-patch (Tatum gateway). Use this when the blob ID might be either
+// a native Walrus blob ID or a Tatum quilt-patch ID.
+func (c *Client) ReadBlobWithFallback(blobID string) ([]byte, error) {
+	data, err := c.ReadBlob(blobID)
+	if err != nil {
+		data, err = c.ReadBlobByQuiltPatchID(blobID)
+	}
+	return data, err
+}
+
 // ReadBlob downloads a blob by its object ID. For blobs under 500 MB,
 // this uses a single request. For larger blobs, use ReadLargeBlob.
 func (c *Client) ReadBlob(blobID string) ([]byte, error) {

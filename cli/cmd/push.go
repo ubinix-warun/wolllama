@@ -12,7 +12,7 @@ import (
 
 	"github.com/wolllama/cli/internal/ollama"
 	"github.com/wolllama/pkg/manifest"
-	wwalrus "github.com/wolllama/pkg/walrus"
+	"github.com/wolllama/pkg/storage"
 )
 
 func init() {
@@ -76,46 +76,58 @@ func runPush(cmd *cobra.Command, args []string) error {
 		})
 	}
 
-	// --- 3. Initialize Walrus client ---
-	publisherURL := viper.GetString("publisher_url")
-	aggregatorURL := viper.GetString("aggregator_url")
+	// --- 3. Initialize storage provider ---
+	providerName := viper.GetString("provider")
+	if flagProvider, _ := cmd.Flags().GetString("provider"); flagProvider != "" {
+		providerName = flagProvider
+	}
+
 	epochs := viper.GetInt("epochs")
 	if flagEpochs, _ := cmd.Flags().GetInt("epochs"); flagEpochs > 0 {
 		epochs = flagEpochs
 	}
 
-	walrusClient := wwalrus.NewClient(wwalrus.Config{
-		PublisherURLs:  splitURLs(publisherURL),
-		AggregatorURLs: splitURLs(aggregatorURL),
+	pubURL, aggURL := walrusURLs()
+	provider, err := storage.New(providerName, storage.Config{
+		PublisherURL:  pubURL,
+		AggregatorURL: aggURL,
+		Epochs:        epochs,
+		TatumAPIKey:   viper.GetString("tatum_api_key"),
+		TatumAPIURL:   viper.GetString("tatum_api_url"),
 	})
+	if err != nil {
+		return fmt.Errorf("init storage provider: %w", err)
+	}
 
-	fmt.Fprintf(os.Stderr, "Pushing %s (%d blobs, %s) to Walrus...\n",
-		modelTag, len(blobs), formatBytes(totalSize(blobs)))
+	fmt.Fprintf(os.Stderr, "Pushing %s (%d blobs, %s) via %s...\n",
+		modelTag, len(blobs), formatBytes(totalSize(blobs)), provider.Name())
 
 	// --- 4. Upload blobs sequentially ---
-	// Blobs > 500 MB are split into 256 MB chunks to work around Walrus aggregator limit.
-	const maxBlobSize = 500_000_000
-	const chunkSize = 256_000_000
+	// Chunk size is determined by the provider's limit.
+	chunkSize := provider.MaxChunkSize()
+	if chunkSize <= 0 || chunkSize > 500_000_000 {
+		chunkSize = 256_000_000
+	}
 
 	blobMap := make(map[string]manifest.BlobRef, len(blobs)) // digest → walrus reference
 	for i, b := range blobs {
 		label := fmt.Sprintf("[%d/%d] %s", i+1, len(blobs), shortDigest(b.digest))
 
-		if b.size <= maxBlobSize {
-			// Single upload for blobs within Walrus limit
+		if b.size <= chunkSize {
+			// Single upload for blobs within provider limit
 			fmt.Fprintf(os.Stderr, "%s (%s)... ", label, formatBytes(b.size))
 			data, err := store.ReadBlob(b.digest)
 			if err != nil {
 				return fmt.Errorf("read blob %s: %w", shortDigest(b.digest), err)
 			}
-			objID, err := walrusClient.StoreBlob(data, epochs)
+			objID, err := provider.Upload(data)
 			if err != nil {
 				return fmt.Errorf("upload blob %s: %w", shortDigest(b.digest), err)
 			}
 			blobMap[b.digest] = manifest.BlobRef{Single: objID}
 			fmt.Fprintf(os.Stderr, "✓ %s\n", shortObjID(objID))
 		} else {
-			// Chunked upload for large blobs (> 500 MB)
+			// Chunked upload for large blobs exceeding provider limit
 			numChunks := int((b.size + chunkSize - 1) / chunkSize)
 			fmt.Fprintf(os.Stderr, "%s (%s, %d chunks) uploading...\n", label, formatBytes(b.size), numChunks)
 
@@ -144,7 +156,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 				fmt.Fprintf(os.Stderr, "%s (%s)... ", chunkLabel, formatBytes(chunkLen))
 				startTime := time.Now()
 
-				chunkID, err := walrusClient.StoreBlob(buf, epochs)
+				chunkID, err := provider.Upload(buf)
 				if err != nil {
 					f.Close()
 					return fmt.Errorf("upload chunk %d of %s: %w", chunkIdx, shortDigest(b.digest), err)
@@ -165,15 +177,15 @@ func runPush(cmd *cobra.Command, args []string) error {
 	}
 
 	// --- 5. Build Wolllama manifest ---
-	wm := manifest.New(modelTag, entry.Raw, blobMap)
+	wm := manifest.NewWithProvider(modelTag, entry.Raw, blobMap, provider.Name())
 	manifestJSON, err := json.Marshal(wm)
 	if err != nil {
 		return fmt.Errorf("marshal wolllama manifest: %w", err)
 	}
 
-	// --- 6. Upload Wolllama manifest to Walrus ---
+	// --- 6. Upload Wolllama manifest to the provider ---
 	fmt.Fprintf(os.Stderr, "Uploading wolllama manifest... ")
-	manifestObjID, err := walrusClient.StoreBlob(manifestJSON, epochs)
+	manifestObjID, err := provider.Upload(manifestJSON)
 	if err != nil {
 		return fmt.Errorf("upload manifest: %w", err)
 	}

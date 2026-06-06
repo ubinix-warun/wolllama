@@ -67,11 +67,14 @@ func initViper() error {
 	viper.SetConfigType("yaml")
 	viper.AddConfigPath(filepath.Dir(configPath))
 
-	// Defaults
-	viper.SetDefault("publisher_url", defaultPublisherURL)
-	viper.SetDefault("aggregator_url", defaultAggregatorURL)
+	// Walrus URLs are derived from walrus_network unless explicitly overridden.
+	// Don't set defaults — compute them on each access.
 	viper.SetDefault("epochs", defaultEpochs)
 	viper.SetDefault("ollama_path", "")
+	viper.SetDefault("provider", "walrus")
+	viper.SetDefault("walrus_network", "testnet")
+	viper.SetDefault("tatum_api_key", "")
+	viper.SetDefault("tatum_api_url", "")
 
 	// Env var overrides: WOLLLAMA_PUBLISHER_URL, WOLLLAMA_EPOCHS, etc.
 	viper.SetEnvPrefix("WOLLLAMA")
@@ -88,9 +91,23 @@ func initViper() error {
 }
 
 func runConfigShow(cmd *cobra.Command, args []string) error {
-	fmt.Printf("publisher_url:  %s\n", viper.GetString("publisher_url"))
-	fmt.Printf("aggregator_url: %s\n", viper.GetString("aggregator_url"))
+	network := viper.GetString("walrus_network")
+	if network == "" {
+		network = "testnet"
+	}
+	pubURL, aggURL := walrusURLs()
+
+	fmt.Printf("provider:       %s\n", viper.GetString("provider"))
+	fmt.Printf("walrus_network: %s\n", network)
+	fmt.Printf("publisher_url:  %s\n", pubURL)
+	fmt.Printf("aggregator_url: %s\n", aggURL)
 	fmt.Printf("epochs:         %d\n", viper.GetInt("epochs"))
+	tatumKey := viper.GetString("tatum_api_key")
+	if tatumKey != "" {
+		fmt.Printf("tatum_api_key:  %s...\n", tatumKey[:8])
+	} else {
+		fmt.Printf("tatum_api_key:  (not set)\n")
+	}
 
 	if viper.ConfigFileUsed() != "" {
 		fmt.Printf("\nconfig file: %s\n", viper.ConfigFileUsed())
@@ -107,6 +124,9 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 		"publisher_url":  true,
 		"aggregator_url": true,
 		"epochs":         true,
+		"provider":        true,
+		"walrus_network":  true,
+		"tatum_api_key":   true,
 	}
 	if !validKeys[key] {
 		return fmt.Errorf("unknown config key %q (valid: publisher_url, aggregator_url, epochs)", key)
@@ -132,6 +152,34 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("%s = %s\n", key, value)
 	return nil
+}
+
+// walrusURLs returns the publisher and aggregator URLs based on the configured network.
+// Explicitly set publisher_url/aggregator_url take precedence over network-derived defaults.
+func walrusURLs() (publisherURL, aggregatorURL string) {
+	network := viper.GetString("walrus_network")
+	if network == "" {
+		network = "testnet"
+	}
+
+	publisherURL = viper.GetString("publisher_url")
+	aggregatorURL = viper.GetString("aggregator_url")
+
+	if publisherURL == "" {
+		if network == "mainnet" {
+			publisherURL = "https://publisher.walrus-mainnet.walrus.space"
+		} else {
+			publisherURL = defaultPublisherURL
+		}
+	}
+	if aggregatorURL == "" {
+		if network == "mainnet" {
+			aggregatorURL = "https://aggregator.walrus-mainnet.walrus.space"
+		} else {
+			aggregatorURL = defaultAggregatorURL
+		}
+	}
+	return
 }
 
 func configFilePath() (string, error) {

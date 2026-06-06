@@ -41,16 +41,21 @@ func runPull(cmd *cobra.Command, args []string) error {
 	manifestObjID := args[0]
 
 	// --- 1. Initialize Walrus client ---
-	aggregatorURL := viper.GetString("aggregator_url")
+	_, aggURL := walrusURLs()
 	walrusClient := wwalrus.NewClient(wwalrus.Config{
-		AggregatorURLs: splitURLs(aggregatorURL),
+		AggregatorURLs: splitURLs(aggURL),
 	})
 
 	// --- 2. Fetch Wolllama manifest from Walrus ---
 	fmt.Printf("Fetching wolllama manifest %s... ", shortObjID(manifestObjID))
 	data, err := walrusClient.ReadBlob(manifestObjID)
 	if err != nil {
-		return fmt.Errorf("fetch manifest: %w", err)
+		// Quilt-patch IDs (Tatum) are rejected by the regular blob endpoint.
+		// Try quilt-patch download as fallback.
+		data, err = walrusClient.ReadBlobByQuiltPatchID(manifestObjID)
+		if err != nil {
+			return fmt.Errorf("fetch manifest: %w", err)
+		}
 	}
 	fmt.Println("✓")
 
@@ -108,6 +113,10 @@ func runPull(cmd *cobra.Command, args []string) error {
 				fmt.Fprintf(os.Stderr, "    chunk %d/%d %s... ", ci+1, len(ref.Chunks), objIDStr(chunkID))
 				chunk, err := walrusClient.ReadBlob(chunkID)
 				if err != nil {
+					// Quilt-patch fallback (Tatum)
+					chunk, err = walrusClient.ReadBlobByQuiltPatchID(chunkID)
+				}
+				if err != nil {
 					fmt.Fprintf(os.Stderr, "\n")
 					return fmt.Errorf("download chunk %d of %s: %w", ci, shortDigest(digest), err)
 				}
@@ -116,6 +125,10 @@ func runPull(cmd *cobra.Command, args []string) error {
 			}
 		} else {
 			blobData, err = walrusClient.ReadBlob(ref.Single)
+			if err != nil {
+				// Quilt-patch ID fallback (Tatum provider)
+				blobData, err = walrusClient.ReadBlobByQuiltPatchID(ref.Single)
+			}
 			if err != nil {
 				return fmt.Errorf("download blob %s: %w", shortDigest(digest), err)
 			}

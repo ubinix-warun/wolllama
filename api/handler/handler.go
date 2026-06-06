@@ -86,9 +86,9 @@ func (h *Handler) GetBlobContent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, err := h.walrus.ReadBlob(objID)
+	data, err := h.walrus.ReadBlobWithFallback(objID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "blob not found on Walrus: "+err.Error())
+		writeError(w, http.StatusNotFound, "blob not found: "+err.Error())
 		return
 	}
 
@@ -113,10 +113,10 @@ func (h *Handler) PreviewManifest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch manifest from Walrus
-	data, err := h.walrus.ReadBlob(objID)
+	// Fetch manifest from Walrus (with quilt-patch fallback for Tatum)
+	data, err := h.walrus.ReadBlobWithFallback(objID)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "manifest not found on Walrus: "+err.Error())
+		writeError(w, http.StatusNotFound, "manifest not found: "+err.Error())
 		return
 	}
 
@@ -223,9 +223,9 @@ func (h *Handler) SubmitModel(w http.ResponseWriter, r *http.Request) {
 	var originalName, tag, manifestJSON *string
 
 	if h.walrus != nil {
-		data, err := h.walrus.ReadBlob(req.ManifestObjID)
+		data, err := h.walrus.ReadBlobWithFallback(req.ManifestObjID)
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "manifest not found on Walrus: "+err.Error())
+			writeError(w, http.StatusBadRequest, "manifest not found: "+err.Error())
 			return
 		}
 

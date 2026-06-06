@@ -40,9 +40,10 @@ func (b BlobRef) IDs() []string {
 // WolllamaManifest is the top-level manifest stored on Walrus.
 type WolllamaManifest struct {
 	WolllamaVersion int               `json:"wolllamaVersion"`
-	Name            string            `json:"name"`           // "model:tag", e.g. "llama3.2:3b-q4_K_M"
-	OllamaManifest  json.RawMessage   `json:"ollamaManifest"` // Original Ollama manifest JSON (opaque)
-	Blobs           map[string]BlobRef `json:"blobs"`         // sha256 digest → walrus object reference
+	Provider        string            `json:"provider,omitempty"` // "walrus" or "tatum"
+	Name            string            `json:"name"`               // "model:tag", e.g. "llama3.2:3b-q4_K_M"
+	OllamaManifest  json.RawMessage   `json:"ollamaManifest"`     // Original Ollama manifest JSON (opaque)
+	Blobs           map[string]BlobRef `json:"blobs"`             // sha256 digest → walrus object reference
 	CreatedAt       time.Time         `json:"createdAt"`
 }
 
@@ -165,8 +166,14 @@ func (m *WolllamaManifest) Validate() error {
 
 // New creates a WolllamaManifest with defaults.
 func New(name string, ollamaManifest json.RawMessage, blobs map[string]BlobRef) *WolllamaManifest {
+	return NewWithProvider(name, ollamaManifest, blobs, "walrus")
+}
+
+// NewWithProvider creates a WolllamaManifest with a specific storage provider.
+func NewWithProvider(name string, ollamaManifest json.RawMessage, blobs map[string]BlobRef, provider string) *WolllamaManifest {
 	return &WolllamaManifest{
 		WolllamaVersion: WolllamaVersion,
+		Provider:        provider,
 		Name:            name,
 		OllamaManifest:  ollamaManifest,
 		Blobs:           blobs,

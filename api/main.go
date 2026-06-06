@@ -71,11 +71,20 @@ func main() {
 		slog.Info("use this token for API requests", "token", apiToken)
 	}
 
-	// Walrus client for manifest previews
+	// Walrus client — respects WOLLLAMA_WALRUS_NETWORK (mainnet/testnet)
+	network := os.Getenv("WOLLLAMA_WALRUS_NETWORK")
 	aggURL := os.Getenv("WOLLLAMA_AGGREGATOR_URL")
-	if aggURL == "" {
+
+	switch {
+	case aggURL != "":
+		// explicit URL overrides everything
+	case network == "mainnet":
+		aggURL = "https://aggregator.walrus-mainnet.walrus.space"
+	default:
 		aggURL = "https://aggregator.walrus-testnet.walrus.space"
 	}
+	slog.Info("walrus aggregator", "url", aggURL)
+
 	walrusClient := wwalrus.NewClient(wwalrus.Config{
 		AggregatorURLs: []string{aggURL},
 	})

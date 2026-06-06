@@ -40,10 +40,14 @@ func init() {
 	// Global flags
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "Verbose output")
 	rootCmd.PersistentFlags().String("ollama-path", "", "Path to Ollama home directory (default: ~/.ollama)")
+	rootCmd.PersistentFlags().String("provider", "", "Storage provider: walrus, tatum, ipfs, s3")
+	rootCmd.PersistentFlags().String("tatum-api-key", "", "Tatum API key (for --provider tatum)")
 
 	// Bind persistent flags to viper
 	viper.BindPFlag("ollama_path", rootCmd.PersistentFlags().Lookup("ollama-path"))
 	viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
+	viper.BindPFlag("provider", rootCmd.PersistentFlags().Lookup("provider"))
+	viper.BindPFlag("tatum_api_key", rootCmd.PersistentFlags().Lookup("tatum-api-key"))
 }
 
 // exitf prints an error and exits.
