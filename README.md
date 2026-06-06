@@ -1,6 +1,6 @@
 # Wolllama — Decentralized Model Registry for Ollama
 
-Your models. Your storage. No limits.
+Your models. Decentralized storage. No limits.
 
 Wolllama is a decentralized model registry that lets you push and pull Ollama models
 to [Walrus](https://walrus.site) decentralized storage. No central registry. No gatekeepers.
