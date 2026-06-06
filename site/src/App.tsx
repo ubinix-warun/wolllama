@@ -26,9 +26,23 @@ function AppRoutes() {
       .then(c => {
         const net = c.sui_network || c.walrus_network || "testnet";
         const rpcUrl = c.sui_rpc_url;
-        if (rpcUrl) {
-          setNetworks({ [net]: { url: rpcUrl } });
-        }
+        
+        setNetworks(prev => {
+          const updated = { ...prev };
+          if (rpcUrl) {
+            updated[net] = { url: rpcUrl };
+          } else if (!updated[net]) {
+            if (net === "localnet") {
+              updated[net] = { url: "http://127.0.0.1:9000" };
+            } else if (net === "devnet") {
+              updated[net] = { url: "https://fullnode.devnet.sui.io:443" };
+            } else {
+              updated[net] = { url: `https://fullnode.${net}.sui.io:443` };
+            }
+          }
+          return updated;
+        });
+        
         setDefaultNetwork(net);
       })
       .catch(() => {});
