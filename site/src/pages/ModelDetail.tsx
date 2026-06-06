@@ -33,7 +33,7 @@ export function ModelDetailPage() {
         ← Back to models
       </Link>
 
-      <div className="bg-[#111] border border-[#2a2a2a] rounded-xl p-6 mb-6">
+      <div className="bg-[#0a0e1a] border border-white/10 rounded-xl p-6 mb-6">
         <div className="flex items-start gap-4 mb-6">
           {model.avatar_url && (
             <img src={model.avatar_url} alt="" className="w-10 h-10 rounded-full mt-1" />
@@ -89,7 +89,7 @@ export function ModelDetailPage() {
           <code className="text-green-400">wolllama pull {model.manifest_obj_id}</code>
           <button
             onClick={() => navigator.clipboard.writeText(`wolllama pull ${model.manifest_obj_id}`)}
-            className="text-xs bg-[#333] text-white px-2 py-1 rounded hover:bg-[#444] transition-colors"
+            className="text-xs bg-white/10 text-white px-2 py-1 rounded hover:bg-white/20 transition-colors"
           >
             Copy
           </button>
@@ -101,7 +101,7 @@ export function ModelDetailPage() {
 
       {/* Description */}
       {model.description_md && (
-        <div className="bg-[#111] border border-[#2a2a2a] rounded-xl p-6 prose prose-invert max-w-none">
+        <div className="bg-[#0a0e1a] border border-white/10 rounded-xl p-6 prose prose-invert max-w-none">
           <h2 className="text-lg font-semibold text-white mb-4">Description</h2>
           <ReactMarkdown>{model.description_md}</ReactMarkdown>
         </div>
@@ -150,7 +150,7 @@ function BlobDetails({ manifestJSON }: { manifestJSON?: string }) {
   };
 
   return (
-    <div className="bg-[#111] border border-[#2a2a2a] rounded-xl p-6 mb-6">
+    <div className="bg-[#0a0e1a] border border-white/10 rounded-xl p-6 mb-6">
       <h2 className="text-lg font-semibold text-white mb-4">Blob Details</h2>
       <div className="space-y-3">
         {allBlobs.map((blob) => {
@@ -160,7 +160,7 @@ function BlobDetails({ manifestJSON }: { manifestJSON?: string }) {
           const isSmallBlob = blob.kind === "model config" || blob.kind === "license" || blob.kind === "params";
 
           return (
-            <div key={blob.digest} className="bg-[#0d0d0d] border border-[#2a2a2a] rounded-lg p-3">
+            <div key={blob.digest} className="bg-[#060a14] border border-white/10 rounded-lg p-3">
               <div className="flex items-center gap-2 mb-2">
                 <span className={`text-xs px-1.5 py-0.5 rounded ${
                   blob.kind === "model" ? "bg-blue-900/50 text-blue-400" :
@@ -181,7 +181,7 @@ function BlobDetails({ manifestJSON }: { manifestJSON?: string }) {
                   </div>
                   <div className="space-y-1">
                     {ids.map((id, i) => (
-                      <div key={i} className="font-mono text-xs text-gray-500 pl-2 border-l border-[#333]">
+                      <div key={i} className="font-mono text-xs text-gray-500 pl-2 border-l border-white/15">
                         chunk {i + 1}: {id}
                       </div>
                     ))}

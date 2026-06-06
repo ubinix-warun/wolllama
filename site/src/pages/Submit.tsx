@@ -164,12 +164,12 @@ export function SubmitPage() {
             value={manifestObjId}
             onChange={(e) => setManifestObjId(e.target.value)}
             placeholder="O1ABCdef...xyz"
-            className="w-full px-4 py-2 rounded-lg bg-[#1a1a2e] border border-[#333] text-white placeholder-gray-500 focus:outline-none focus:border-white font-mono text-sm"
+            className="w-full px-4 py-2 rounded-lg bg-[#1a1a2e] border border-white/15 text-white placeholder-gray-500 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20 font-mono text-sm"
           />
           {previewing && <div className="mt-3 text-sm text-gray-400">Fetching manifest...</div>}
           {previewError && <div className="mt-3 text-sm text-red-400">⚠ {previewError}</div>}
           {preview && (
-            <div className="mt-3 bg-[#1a1a2e] border border-[#333] rounded-lg p-3 text-sm">
+            <div className="mt-3 bg-[#1a1a2e] border border-blue-400/20 rounded-lg p-3 text-sm">
               <div className="text-green-400 font-mono text-xs mb-2">✓ Manifest found on Walrus</div>
               <div className="grid grid-cols-2 gap-2">
                 <div><span className="text-gray-500">Model:</span> <span className="text-white">{preview.name}</span></div>
@@ -190,7 +190,7 @@ export function SubmitPage() {
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
             placeholder="llama3.2:3b-q4_K_M"
-            className="w-full px-4 py-2 rounded-lg bg-[#1a1a2e] border border-[#333] text-white placeholder-gray-500 focus:outline-none focus:border-white"
+            className="w-full px-4 py-2 rounded-lg bg-[#1a1a2e] border border-white/15 text-white placeholder-gray-500 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20"
           />
         </div>
 
@@ -203,7 +203,7 @@ export function SubmitPage() {
             onChange={(e) => setDescriptionMd(e.target.value)}
             placeholder="A brief description of this model..."
             rows={5}
-            className="w-full px-4 py-2 rounded-lg bg-[#1a1a2e] border border-[#333] text-white placeholder-gray-500 focus:outline-none focus:border-white resize-y font-mono text-sm"
+            className="w-full px-4 py-2 rounded-lg bg-[#1a1a2e] border border-white/15 text-white placeholder-gray-500 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20 resize-y font-mono text-sm"
           />
         </div>
 

@@ -1,60 +1,58 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { SuiClientProvider, WalletProvider } from "@mysten/dapp-kit";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
-import { LandingPage } from "./pages/Landing";
+import { lazy, Suspense, useEffect, useState, useMemo } from "react";
 import { ModelsPage } from "./pages/Models";
 import { ModelDetailPage } from "./pages/ModelDetail";
 import { ProfilePage } from "./pages/Profile";
 import { SubmitPage } from "./pages/Submit";
 import { Layout } from "./components/Layout";
+
+const LandingPage = lazy(() => import("./pages/Landing"));
 import "@mysten/dapp-kit/dist/index.css";
 import "./index.css";
 
 const queryClient = new QueryClient();
 
 function AppRoutes() {
-  const [networks, setNetworks] = useState<Record<string, any>>({
-    testnet: { url: "https://fullnode.testnet.sui.io:443" },
-    mainnet: { url: "https://fullnode.mainnet.sui.io:443" },
-  });
-  const [defaultNetwork, setDefaultNetwork] = useState("testnet");
+  const [config, setConfig] = useState<{
+    suiNetwork: string;
+    suiRpcUrl: string;
+  }>({ suiNetwork: "testnet", suiRpcUrl: "" });
 
   useEffect(() => {
     fetch("/api/config")
       .then(r => r.json())
       .then(c => {
-        const net = c.sui_network || c.walrus_network || "testnet";
-        const rpcUrl = c.sui_rpc_url;
-        
-        setNetworks(prev => {
-          const updated = { ...prev };
-          if (rpcUrl) {
-            updated[net] = { url: rpcUrl };
-          } else if (!updated[net]) {
-            if (net === "localnet") {
-              updated[net] = { url: "http://127.0.0.1:9000" };
-            } else if (net === "devnet") {
-              updated[net] = { url: "https://fullnode.devnet.sui.io:443" };
-            } else {
-              updated[net] = { url: `https://fullnode.${net}.sui.io:443` };
-            }
-          }
-          return updated;
+        setConfig({
+          suiNetwork: c.sui_network || c.walrus_network || "testnet",
+          suiRpcUrl: c.sui_rpc_url || "",
         });
-        
-        setDefaultNetwork(net);
       })
       .catch(() => {});
   }, []);
 
+  const networks = useMemo(() => {
+    const base: Record<string, any> = {
+      testnet: { url: "https://fullnode.testnet.sui.io:443" },
+      mainnet: { url: "https://fullnode.mainnet.sui.io:443" },
+    };
+
+    if (config.suiRpcUrl) {
+      // Override the active network with custom RPC URL (e.g. Tatum)
+      base[config.suiNetwork] = { url: config.suiRpcUrl };
+    }
+
+    return base;
+  }, [config.suiNetwork, config.suiRpcUrl]);
+
   return (
-    <SuiClientProvider networks={networks} defaultNetwork={defaultNetwork}>
+    <SuiClientProvider networks={networks} defaultNetwork={config.suiNetwork}>
       <WalletProvider autoConnect>
         <BrowserRouter>
           <Routes>
             <Route element={<Layout />}>
-              <Route path="/" element={<LandingPage />} />
+              <Route path="/" element={<Suspense fallback={<div className="py-24" />}><LandingPage /></Suspense>} />
               <Route path="/models" element={<ModelsPage />} />
               <Route path="/models/:id" element={<ModelDetailPage />} />
               <Route path="/profile" element={<ProfilePage />} />

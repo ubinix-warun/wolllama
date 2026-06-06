@@ -12,8 +12,8 @@ export function Layout() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#0d0d0d] text-[#e0e0e0] font-sans">
-      <header className="border-b border-[#2a2a2a] px-6 py-4 flex items-center justify-between">
+    <div className="min-h-screen bg-[#080c17] text-[#e0e0e0] font-sans">
+      <header className="border-b border-white/5 px-6 py-4 flex items-center justify-between backdrop-blur-md bg-[#080c17]/70 sticky top-0 z-50">
         <Link to="/" className="text-xl font-bold tracking-tight text-white">
           wolllama
         </Link>
@@ -38,7 +38,7 @@ export function Layout() {
         <Outlet />
       </main>
 
-      <footer className="border-t border-[#2a2a2a] px-6 py-8 text-center text-sm text-gray-500">
+      <footer className="border-t border-white/5 px-6 py-8 text-center text-sm text-gray-500">
         <p>Wolllama — Decentralized model registry powered by Walrus</p>
         <div className="flex justify-center gap-4 mt-2">
           <a href="https://github.com/wolllama-org" className="hover:text-white transition-colors">

@@ -32,7 +32,7 @@ export function ModelsPage() {
           onChange={(e) => {
             setSearchParams(e.target.value ? { search: e.target.value } : {});
           }}
-          className="w-full max-w-md px-4 py-2 rounded-lg bg-[#1a1a2e] border border-[#333] text-white placeholder-gray-500 focus:outline-none focus:border-white"
+          className="w-full max-w-md px-4 py-2 rounded-lg bg-[#1a1a2e] border border-white/15 text-white placeholder-gray-500 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/20"
         />
       </div>
 

@@ -1,1 +1,22 @@
 @import "tailwindcss";
+
+@keyframes twinkle {
+  0%, 100% { opacity: 0.15; }
+  50% { opacity: 1; }
+}
+
+@keyframes aurora-drift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.animate-twinkle {
+  animation: twinkle var(--twinkle-dur, 4s) ease-in-out infinite;
+  animation-delay: var(--twinkle-del, 0s);
+}
+
+.animate-aurora {
+  animation: aurora-drift 20s ease-in-out infinite;
+  background-size: 200% 200%;
+}

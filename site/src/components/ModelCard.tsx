@@ -8,7 +8,7 @@ export function ModelCard({ model }: { model: Model }) {
   };
 
   return (
-    <div className="bg-[#111] border border-[#2a2a2a] rounded-xl p-5 hover:border-[#444] transition-colors h-full">
+    <div className="bg-[#0a0e1a] border border-white/10 rounded-xl p-5 hover:border-blue-400/40 transition-colors h-full">
       <div className="flex items-start gap-3 mb-3">
         {model.avatar_url && (
           <img src={model.avatar_url} alt="" className="w-6 h-6 rounded-full mt-0.5" />
