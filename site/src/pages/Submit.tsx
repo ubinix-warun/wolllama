@@ -20,14 +20,14 @@ export function SubmitPage() {
   const [preview, setPreview] = useState<ManifestPreview | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
-  const [authMode, setAuthMode] = useState<string>("open");
+  const [authMode, setAuthMode] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navigate = useNavigate();
   const account = useCurrentAccount();
   const { mutateAsync: signPersonalMessage } = useSignPersonalMessage();
 
   useEffect(() => {
-    getAuthMode().then(setAuthMode);
+    getAuthMode().then(setAuthMode).catch(() => setAuthMode("open"));
   }, []);
 
   // Pre-fetch manifest info when object ID changes (debounced)
@@ -85,7 +85,9 @@ export function SubmitPage() {
     setSubmitting(true);
     try {
       let submitterAddress: string | undefined;
+      let publicKey: string | undefined;
       let signature: string | undefined;
+      let message: string | undefined;
 
       if (authMode === "sui" && account) {
         // Build payload to sign
@@ -100,6 +102,17 @@ export function SubmitPage() {
         const result = await signPersonalMessage({ message: payloadBytes });
         signature = result.signature;
         submitterAddress = account.address;
+        // Encode public key to base64 (wallet returns raw bytes)
+        const rawKey = (account as any).publicKey;
+        if (rawKey) {
+          if (typeof rawKey === 'string') {
+            publicKey = rawKey;
+          } else {
+            // Uint8Array → base64
+            publicKey = btoa(String.fromCharCode(...new Uint8Array(rawKey)));
+          }
+        }
+        message = Array.from(payloadBytes).map(b => b.toString(16).padStart(2, '0')).join('');
       }
 
       // Submit
@@ -108,7 +121,9 @@ export function SubmitPage() {
         displayName.trim(),
         descriptionMd.trim() || undefined,
         submitterAddress,
-        signature
+        publicKey,
+        signature,
+        message
       );
       navigate(`/models/${model.id}`);
     } catch (err) {
@@ -124,6 +139,15 @@ export function SubmitPage() {
     if (bytes >= 1_000) return `${(bytes / 1_000).toFixed(0)} KB`;
     return `${bytes} B`;
   };
+
+  // Loading — waiting for auth mode
+  if (authMode === null) {
+    return (
+      <div className="max-w-lg mx-auto px-6 py-12 text-center">
+        <p className="text-gray-400">Loading...</p>
+      </div>
+    );
+  }
 
   // Only block in sui mode when no wallet connected
   if (authMode === "sui" && !account) {

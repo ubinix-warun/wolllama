@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { motion, useScroll, useTransform } from "framer-motion";
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { listFeaturedModels, getAuthMode, type Model } from "../lib/api";
 import wallyImg from "../assets/wally.webp";
 import tatumLogo from "../assets/tatum-logo.svg";
 
@@ -505,20 +506,7 @@ export default function LandingPage() {
       </SectionReveal>
 
       {/* ═══ Featured Models ═══ */}
-      <SectionReveal className="py-20 px-6">
-        <h2 className="text-3xl font-bold text-white text-center mb-4">Featured Models</h2>
-        <p className="text-center text-gray-400 mb-12">
-          Discover models published by the community
-        </p>
-        <div className="max-w-4xl mx-auto text-center">
-          <Link
-            to="/models"
-            className="inline-block bg-white text-black px-6 py-3 rounded-lg font-medium hover:bg-gray-200 transition-colors"
-          >
-            Browse All Models →
-          </Link>
-        </div>
-      </SectionReveal>
+      <FeaturedModelsSection />
 
       {/* ═══ CTA ═══ */}
       <SectionReveal className="py-20 px-6 bg-[#0a0e1a] text-center">
@@ -549,5 +537,87 @@ export default function LandingPage() {
       </SectionReveal>
 
     </div>
+  );
+}
+
+// ═══ Featured Models Section ═══
+// Only rendered in sui mode. In open mode, hidden entirely.
+
+function FeaturedModelsSection() {
+  const [models, setModels] = useState<Model[]>([]);
+  const [authMode, setAuthMode] = useState<string>("open");
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    getAuthMode().then(m => {
+      setAuthMode(m);
+      if (m === "sui") {
+        listFeaturedModels()
+          .then(d => setModels(d.models || []))
+          .catch(() => {})
+          .finally(() => setLoaded(true));
+      } else {
+        setLoaded(true);
+      }
+    });
+  }, []);
+
+  // Hide entirely in open mode
+  if (loaded && authMode !== "sui") return null;
+  // Hide if no featured models after loading
+  if (loaded && models.length === 0) return null;
+
+  const formatSize = (bytes?: number) => {
+    if (!bytes) return "";
+    if (bytes >= 1_000_000_000) return `${(bytes / 1_000_000_000).toFixed(1)} GB`;
+    if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(0)} MB`;
+    return `${bytes} B`;
+  };
+
+  return (
+    <section className="py-20 px-6">
+      <h2 className="text-3xl font-bold text-white text-center mb-4">Featured Models</h2>
+      <p className="text-center text-gray-400 mb-12">
+        Curated models from the Wolllama community
+      </p>
+      <div className="max-w-4xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {models.map(model => (
+          <Link
+            key={model.id}
+            to={`/models/${model.id}`}
+            className="bg-[#111] border border-amber-900/30 rounded-xl p-5 hover:border-amber-500/50 transition-colors group"
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xs px-1.5 py-0.5 rounded bg-amber-900/30 text-amber-400">
+                featured
+              </span>
+            </div>
+            <h3 className="text-white font-medium truncate mb-1">{model.display_name}</h3>
+            <p className="text-xs text-gray-500">
+              {model.submitter_address
+                ? `${model.submitter_address.slice(0, 6)}...${model.submitter_address.slice(-4)}`
+                : model.submitter_name || ""}
+            </p>
+            <div className="flex gap-3 mt-2 text-xs text-gray-500">
+              <span>{formatSize(model.total_size)}</span>
+              <span>{model.blob_count} blobs</span>
+            </div>
+            {model.signature && (
+              <p className="text-xs text-green-500 mt-2">✓ Sui wallet signed</p>
+            )}
+          </Link>
+        ))}
+      </div>
+      {models.length > 0 && (
+        <div className="max-w-4xl mx-auto text-center mt-8">
+          <Link
+            to="/models"
+            className="inline-block bg-white text-black px-6 py-3 rounded-lg font-medium hover:bg-gray-200 transition-colors"
+          >
+            Browse All Models →
+          </Link>
+        </div>
+      )}
+    </section>
   );
 }

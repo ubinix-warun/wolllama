@@ -21,6 +21,11 @@ export function ModelCard({ model }: { model: Model }) {
               : model.submitter_name || "anonymous"}
           </p>
         </div>
+        {model.featured && (
+          <span className="ml-auto shrink-0 bg-amber-900/30 text-amber-400 text-xs px-1.5 py-0.5 rounded">
+            ★
+          </span>
+        )}
         {!model.available && (
           <span className="ml-auto shrink-0 bg-red-900/50 text-red-400 text-xs px-1.5 py-0.5 rounded">
             Expired

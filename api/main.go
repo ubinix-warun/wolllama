@@ -91,7 +91,9 @@ func main() {
 	})
 
 	// Handlers
-	h := handler.New(database, ghAuth, authMode, apiToken, walrusClient)
+	featuredOwners := strings.Split(os.Getenv("WOLLLAMA_FEATURED_OWNERS"), ",")
+
+	h := handler.New(database, ghAuth, authMode, apiToken, walrusClient, featuredOwners)
 
 	// Routes
 	mux := http.NewServeMux()
@@ -99,6 +101,8 @@ func main() {
 	// API routes
 	mux.HandleFunc("GET /api/blobs/{obj_id}", h.GetBlobContent)
 	mux.HandleFunc("GET /api/manifest/preview", h.PreviewManifest)
+	mux.HandleFunc("GET /api/models/featured", h.ListFeaturedModels)
+	mux.HandleFunc("PUT /api/models/{id}/featured", h.ToggleFeatured)
 	mux.HandleFunc("GET /api/models", h.ListModels)
 	mux.HandleFunc("GET /api/models/{id}", h.GetModel)
 	mux.HandleFunc("POST /api/models", h.SubmitModel)
@@ -113,11 +117,22 @@ func main() {
 	// Config endpoint — tells the frontend which network to use
 	mux.HandleFunc("GET /api/config", func(w http.ResponseWriter, r *http.Request) {
 		suiRPC := os.Getenv("WOLLLAMA_SUI_RPC_URL")
+		addr := r.URL.Query().Get("address")
+		isOwner := "false"
+		if addr != "" {
+			for _, o := range strings.Split(os.Getenv("WOLLLAMA_FEATURED_OWNERS"), ",") {
+				if strings.TrimSpace(o) == addr {
+					isOwner = "true"
+					break
+				}
+			}
+		}
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"walrus_network":"%s","sui_network":"%s","sui_rpc_url":"%s"}`,
+		fmt.Fprintf(w, `{"walrus_network":"%s","sui_network":"%s","sui_rpc_url":"%s","is_featured_owner":%s}`,
 			os.Getenv("WOLLLAMA_WALRUS_NETWORK"),
 			os.Getenv("WOLLLAMA_SUI_NETWORK"),
 			suiRPC,
+			isOwner,
 		)
 	})
 

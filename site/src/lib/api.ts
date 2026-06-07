@@ -34,6 +34,7 @@ export interface Model {
   wallet_address?: string;
   submitter_address?: string;
   signature?: string;
+  featured?: boolean;
   manifest_json?: string;
   available: boolean;
   created_at: string;
@@ -64,6 +65,24 @@ export function getModel(id: number) {
   return request<Model>(`/models/${id}`);
 }
 
+export function listFeaturedModels() {
+  return request<{ models: Model[] }>("/models/featured");
+}
+
+export function toggleFeatured(
+  id: number,
+  featured: boolean,
+  address: string,
+  publicKey: string,
+  signature: string,
+  message: string,
+) {
+  return request<{ id: number; featured: boolean }>(`/models/${id}/featured`, {
+    method: "PUT",
+    body: JSON.stringify({ featured, address, public_key: publicKey, signature, message }),
+  });
+}
+
 export function getUserModels(userId: number) {
   return request<{ models: Model[] }>(`/users/${userId}/models`);
 }
@@ -90,7 +109,9 @@ export function submitModel(
   displayName: string,
   descriptionMd?: string,
   submitterAddress?: string,
+  publicKey?: string,
   signature?: string,
+  message?: string,
 ) {
   return request<Model>("/models", {
     method: "POST",
@@ -99,7 +120,9 @@ export function submitModel(
       display_name: displayName,
       description_md: descriptionMd || null,
       submitter_address: submitterAddress || null,
+      public_key: publicKey || null,
       signature: signature || null,
+      message: message || null,
     }),
   });
 }

@@ -20,11 +20,15 @@ func Nonce() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// VerifySignature checks that a message was signed by the owner of a Sui wallet.
-// publicKey is base64-encoded (ed25519 32-byte key).
-// signature is base64-encoded (ed25519 64-byte signature).
-// message is the raw bytes that were signed.
+// VerifySignature checks that a message was signed by the owner of a Sui wallet
+// using signPersonalMessage. Reconstructs the IntentMessage wrapper that Sui
+// wallets apply before signing.
 func VerifySignature(publicKeyB64, signatureB64 string, message []byte) error {
+	return VerifySignatureRaw(publicKeyB64, signatureB64, wrapIntentMessage(message))
+}
+
+// VerifySignatureRaw verifies a raw ed25519 signature without IntentMessage wrapping.
+func VerifySignatureRaw(publicKeyB64, signatureB64 string, rawMessage []byte) error {
 	pubKey, err := base64.StdEncoding.DecodeString(publicKeyB64)
 	if err != nil {
 		return fmt.Errorf("decode public key: %w", err)
@@ -39,7 +43,7 @@ func VerifySignature(publicKeyB64, signatureB64 string, message []byte) error {
 		return fmt.Errorf("invalid ed25519 public key size: %d (expected %d)", len(pubKey), ed25519.PublicKeySize)
 	}
 
-	if !ed25519.Verify(pubKey, message, sig) {
+	if !ed25519.Verify(pubKey, rawMessage, sig) {
 		return fmt.Errorf("signature verification failed")
 	}
 
@@ -67,4 +71,50 @@ func ValidateAddress(addr string) bool {
 		}
 	}
 	return true
+}
+
+// wrapIntentMessage wraps raw bytes in Sui's IntentMessage BCS envelope.
+//
+// signPersonalMessage signs:
+//   BCS(IntentMessage {
+//       intent: Intent { scope: 3, version: 0, app_id: 0 },
+//       value: BCS(vector<u8>) of raw message
+//   })
+//
+// BCS layout:
+//   [scope:u8, version:u8, app_id:u8]        — Intent (3 bytes)
+//   ULEB128(len(value))                       — BCS length of value field (outer)
+//   ULEB128(len(raw))                         — BCS length of message vector (inner)
+//   raw bytes
+func wrapIntentMessage(data []byte) []byte {
+	intent := []byte{0x03, 0x00, 0x00}
+
+	// Inner: BCS serialization of message as vector<u8>
+	innerLen := uleb128(uint64(len(data)))
+	inner := append(innerLen, data...)
+
+	// Outer: BCS serialization of value field in IntentMessage (vector<u8>)
+	outerLen := uleb128(uint64(len(inner)))
+
+	result := make([]byte, 0, len(intent)+len(outerLen)+len(inner))
+	result = append(result, intent...)
+	result = append(result, outerLen...)
+	result = append(result, inner...)
+	return result
+}
+
+func uleb128(n uint64) []byte {
+	var buf []byte
+	for {
+		b := byte(n & 0x7f)
+		n >>= 7
+		if n > 0 {
+			b |= 0x80
+		}
+		buf = append(buf, b)
+		if n == 0 {
+			break
+		}
+	}
+	return buf
 }

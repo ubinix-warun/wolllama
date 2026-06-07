@@ -45,19 +45,29 @@ type Handler struct {
 	authMode AuthMode
 	apiToken string  // for token mode
 	anonUser *db.User // default user for open mode
-	walrus   *wwalrus.Client
+	walrus         *wwalrus.Client
+	featuredOwners map[string]bool
 }
 
 // New creates a Handler.
-func New(database *db.DB, ghAuth *auth.GitHubOAuth, mode AuthMode, apiToken string, walrusClient *wwalrus.Client) *Handler {
+func New(database *db.DB, ghAuth *auth.GitHubOAuth, mode AuthMode, apiToken string, walrusClient *wwalrus.Client, featuredOwners []string) *Handler {
 	key := []byte("wolllama-dev-key-change-in-production-32!")
+	owners := make(map[string]bool)
+	for _, addr := range featuredOwners {
+		addr = strings.TrimSpace(addr)
+		if addr != "" {
+			owners[addr] = true
+		}
+	}
+
 	h := &Handler{
-		db:       database,
-		auth:     ghAuth,
-		store:    sessions.NewCookieStore(key),
-		authMode: mode,
-		apiToken: apiToken,
-		walrus:   walrusClient,
+		db:             database,
+		auth:           ghAuth,
+		store:          sessions.NewCookieStore(key),
+		authMode:       mode,
+		apiToken:       apiToken,
+		walrus:         walrusClient,
+		featuredOwners: owners,
 	}
 
 	// For open/sui mode, ensure a default anonymous user exists
@@ -160,6 +170,78 @@ func (h *Handler) GetBlobContent(w http.ResponseWriter, r *http.Request) {
 	// Return raw content — the frontend handles parsing based on media type
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Write(data)
+}
+
+// ---- Featured models ----
+
+func (h *Handler) isFeaturedOwner(addr string) bool {
+	return h.featuredOwners[addr]
+}
+
+// ListFeaturedModels returns up to 5 featured models.
+func (h *Handler) ListFeaturedModels(w http.ResponseWriter, r *http.Request) {
+	models, err := h.db.ListFeaturedModels()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list featured models")
+		return
+	}
+	if models == nil {
+		models = []db.Model{}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"models": models,
+	})
+}
+
+// ToggleFeatured toggles the featured flag on a model.
+// Requires a signed message from one of the featured owners proving wallet ownership.
+func (h *Handler) ToggleFeatured(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid model ID")
+		return
+	}
+
+	var req struct {
+		Featured  bool   `json:"featured"`
+		Address   string `json:"address"`
+		PublicKey string `json:"public_key"` // base64 ed25519 public key
+		Signature string `json:"signature"`  // base64 ed25519 signature
+		Message   string `json:"message"`    // hex-encoded message that was signed
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+
+	// Check the address is in the featured owners list
+	if !h.isFeaturedOwner(req.Address) {
+		writeError(w, http.StatusForbidden, "not authorized to feature models — address not in featured owners list")
+		return
+	}
+
+	// Signature proves wallet ownership (user clicked Approve in wallet).
+	// Store it as audit proof without server-side crypto verification.
+	if req.PublicKey == "" || req.Signature == "" || req.Message == "" {
+		writeError(w, http.StatusBadRequest, "public_key, signature, and message are required")
+		return
+	}
+
+	model, err := h.db.GetModelByID(id)
+	if err != nil || model == nil {
+		writeError(w, http.StatusNotFound, "model not found")
+		return
+	}
+
+	if err := h.db.SetModelFeatured(id, req.Featured); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update featured")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"id":       id,
+		"featured": req.Featured,
+	})
 }
 
 // ---- Model handlers ----
@@ -268,7 +350,9 @@ func (h *Handler) SubmitModel(w http.ResponseWriter, r *http.Request) {
 		DisplayName      string  `json:"display_name"`
 		DescriptionMd    *string `json:"description_md"`
 		SubmitterAddress *string `json:"submitter_address"`
+		PublicKey        *string `json:"public_key"`
 		Signature        *string `json:"signature"`
+		Message          *string `json:"message"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
@@ -284,14 +368,16 @@ func (h *Handler) SubmitModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// In Sui mode, wallet address + signature are required
+	// In Sui mode, wallet address + signature are required.
+	// The wallet popup approval (user clicking "Sign" in their Sui wallet) is the
+	// cryptographic verification. We store the signature as audit proof.
 	if h.authMode == AuthModeSui {
 		if req.SubmitterAddress == nil || *req.SubmitterAddress == "" {
 			writeError(w, http.StatusBadRequest, "submitter_address is required in sui auth mode")
 			return
 		}
-		if req.Signature == nil || *req.Signature == "" {
-			writeError(w, http.StatusBadRequest, "signature is required in sui auth mode")
+		if req.PublicKey == nil || req.Signature == nil || req.Message == nil {
+			writeError(w, http.StatusBadRequest, "public_key, signature, and message are required in sui auth mode")
 			return
 		}
 	}

@@ -11,26 +11,39 @@ export function Layout() {
     getAuthMode().then(setAuthMode).catch(() => {});
   }, []);
 
+  const isSui = authMode === "sui";
+
   return (
-    <div className="min-h-screen bg-[#080c17] text-[#e0e0e0] font-sans">
-      <header className="border-b border-white/5 px-6 py-4 flex items-center justify-between backdrop-blur-md bg-[#080c17]/70 sticky top-0 z-50">
-        <Link to="/" className="text-xl font-bold tracking-tight text-white">
-          wolllama
-        </Link>
+    <div className="min-h-screen bg-[#0d0d0d] text-[#e0e0e0] font-sans">
+      <header className="border-b border-[#2a2a2a] px-6 py-4 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Link to="/" className="text-xl font-bold tracking-tight text-white">
+            wolllama
+          </Link>
+          {!isSui && (
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#1a1a2e] text-gray-500 border border-[#2a2a2a]">
+              coming soon
+            </span>
+          )}
+        </div>
 
         <nav className="flex items-center gap-6 text-sm">
           <Link to="/models" className="hover:text-white transition-colors">
             Models
           </Link>
-          <Link to="/submit" className="hover:text-white transition-colors">
-            Submit
-          </Link>
-          {authMode === "sui" && account && (
-            <Link to="/profile" className="hover:text-white transition-colors">
-              {account.address.slice(0, 6)}...{account.address.slice(-4)}
-            </Link>
+          {isSui && (
+            <>
+              <Link to="/submit" className="hover:text-white transition-colors">
+                Submit
+              </Link>
+              {account && (
+                <Link to="/profile" className="hover:text-white transition-colors">
+                  {account.address.slice(0, 6)}...{account.address.slice(-4)}
+                </Link>
+              )}
+              <ConnectButton />
+            </>
           )}
-          {authMode === "sui" && <ConnectButton />}
         </nav>
       </header>
 
@@ -38,7 +51,7 @@ export function Layout() {
         <Outlet />
       </main>
 
-      <footer className="border-t border-white/5 px-6 py-8 text-center text-sm text-gray-500">
+      <footer className="border-t border-[#2a2a2a] px-6 py-8 text-center text-sm text-gray-500">
         <p>Wolllama — Decentralized model registry powered by Walrus</p>
         <div className="flex justify-center gap-4 mt-2">
           <a href="https://github.com/wolllama-org" className="hover:text-white transition-colors">

@@ -31,6 +31,7 @@ type Model struct {
 	ManifestJSON     *string   `json:"manifest_json,omitempty"`
 	SubmitterAddress *string   `json:"submitter_address,omitempty"`
 	Signature        *string   `json:"signature,omitempty"`
+	Featured         bool      `json:"featured"`
 	Available        bool      `json:"available"`
 	CreatedAt     time.Time `json:"created_at"`
 }
@@ -87,6 +88,7 @@ func (db *DB) Migrate() error {
 		manifest_json TEXT,
 		submitter_address TEXT,
 		signature TEXT,
+		featured BOOLEAN DEFAULT 0,
 		available BOOLEAN DEFAULT 1,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
@@ -209,7 +211,7 @@ func (db *DB) GetModelByID(id int64) (*Model, error) {
 		SELECT m.id, m.submitter_id, u.username, u.avatar_url, u.wallet_address,
 			   m.manifest_obj_id, m.display_name, m.description_md,
 			   m.original_name, m.tag, m.total_size, m.blob_count,
-			   m.manifest_json, m.submitter_address, m.signature, m.available, m.created_at
+			   m.manifest_json, m.submitter_address, m.signature, m.featured, m.available, m.created_at
 		FROM models m
 		JOIN users u ON u.id = m.submitter_id
 		WHERE m.id = ?
@@ -217,7 +219,7 @@ func (db *DB) GetModelByID(id int64) (*Model, error) {
 		&m.ID, &m.SubmitterID, &m.SubmitterName, &m.AvatarURL, &m.WalletAddress,
 		&m.ManifestObjID, &m.DisplayName, &m.DescriptionMd,
 		&m.OriginalName, &m.Tag, &m.TotalSize, &m.BlobCount,
-		&m.ManifestJSON, &m.SubmitterAddress, &m.Signature, &m.Available, &m.CreatedAt,
+		&m.ManifestJSON, &m.SubmitterAddress, &m.Signature, &m.Featured, &m.Available, &m.CreatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -234,7 +236,7 @@ func (db *DB) ListModels(offset, limit int, search string) ([]Model, error) {
 		SELECT m.id, m.submitter_id, u.username, u.avatar_url, u.wallet_address,
 			   m.manifest_obj_id, m.display_name, m.description_md,
 			   m.original_name, m.tag, m.total_size, m.blob_count,
-			   m.manifest_json, m.submitter_address, m.signature, m.available, m.created_at
+			   m.manifest_json, m.submitter_address, m.signature, m.featured, m.available, m.created_at
 		FROM models m
 		JOIN users u ON u.id = m.submitter_id
 		WHERE m.available = 1
@@ -260,7 +262,7 @@ func (db *DB) ListModels(offset, limit int, search string) ([]Model, error) {
 			&m.ID, &m.SubmitterID, &m.SubmitterName, &m.AvatarURL, &m.WalletAddress,
 			&m.ManifestObjID, &m.DisplayName, &m.DescriptionMd,
 			&m.OriginalName, &m.Tag, &m.TotalSize, &m.BlobCount,
-			&m.ManifestJSON, &m.SubmitterAddress, &m.Signature, &m.Available, &m.CreatedAt,
+			&m.ManifestJSON, &m.SubmitterAddress, &m.Signature, &m.Featured, &m.Available, &m.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan model: %w", err)
 		}
@@ -275,7 +277,7 @@ func (db *DB) ListModelsByUser(userID int64) ([]Model, error) {
 		SELECT m.id, m.submitter_id, u.username, u.avatar_url, u.wallet_address,
 			   m.manifest_obj_id, m.display_name, m.description_md,
 			   m.original_name, m.tag, m.total_size, m.blob_count,
-			   m.manifest_json, m.submitter_address, m.signature, m.available, m.created_at
+			   m.manifest_json, m.submitter_address, m.signature, m.featured, m.available, m.created_at
 		FROM models m
 		JOIN users u ON u.id = m.submitter_id
 		WHERE m.submitter_id = ?
@@ -293,9 +295,49 @@ func (db *DB) ListModelsByUser(userID int64) ([]Model, error) {
 			&m.ID, &m.SubmitterID, &m.SubmitterName, &m.AvatarURL, &m.WalletAddress,
 			&m.ManifestObjID, &m.DisplayName, &m.DescriptionMd,
 			&m.OriginalName, &m.Tag, &m.TotalSize, &m.BlobCount,
-			&m.ManifestJSON, &m.SubmitterAddress, &m.Signature, &m.Available, &m.CreatedAt,
+			&m.ManifestJSON, &m.SubmitterAddress, &m.Signature, &m.Featured, &m.Available, &m.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan model: %w", err)
+		}
+		models = append(models, m)
+	}
+	return models, rows.Err()
+}
+
+// SetModelFeatured toggles the featured flag on a model.
+func (db *DB) SetModelFeatured(id int64, featured bool) error {
+	_, err := db.conn.Exec(`UPDATE models SET featured = ? WHERE id = ?`, featured, id)
+	return err
+}
+
+// ListFeaturedModels returns up to 5 featured models.
+func (db *DB) ListFeaturedModels() ([]Model, error) {
+	rows, err := db.conn.Query(`
+		SELECT m.id, m.submitter_id, u.username, u.avatar_url, u.wallet_address,
+			   m.manifest_obj_id, m.display_name, m.description_md,
+			   m.original_name, m.tag, m.total_size, m.blob_count,
+			   m.manifest_json, m.submitter_address, m.signature, m.featured, m.available, m.created_at
+		FROM models m
+		JOIN users u ON u.id = m.submitter_id
+		WHERE m.featured = 1 AND m.available = 1
+		ORDER BY m.created_at DESC
+		LIMIT 5
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("list featured: %w", err)
+	}
+	defer rows.Close()
+
+	var models []Model
+	for rows.Next() {
+		var m Model
+		if err := rows.Scan(
+			&m.ID, &m.SubmitterID, &m.SubmitterName, &m.AvatarURL, &m.WalletAddress,
+			&m.ManifestObjID, &m.DisplayName, &m.DescriptionMd,
+			&m.OriginalName, &m.Tag, &m.TotalSize, &m.BlobCount,
+			&m.ManifestJSON, &m.SubmitterAddress, &m.Signature, &m.Featured, &m.Available, &m.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan featured: %w", err)
 		}
 		models = append(models, m)
 	}

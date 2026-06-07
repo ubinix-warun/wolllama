@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { getModel, type Model } from "../lib/api";
+import { useCurrentAccount, useSignPersonalMessage } from "@mysten/dapp-kit";
+import { getModel, getAuthMode, toggleFeatured, type Model } from "../lib/api";
 import ReactMarkdown from "react-markdown";
 
 export function ModelDetailPage() {
@@ -55,8 +56,14 @@ export function ModelDetailPage() {
                 ✓ Sui wallet signed
               </p>
             )}
+            <FeatureToggle model={model} />
           </div>
 
+          {model.featured && (
+            <span className="bg-amber-900/30 text-amber-400 text-xs px-2 py-1 rounded">
+              ★ Featured
+            </span>
+          )}
           {!model.available && (
             <span className="ml-auto bg-red-900/50 text-red-400 text-xs px-2 py-1 rounded">
               Unavailable
@@ -200,6 +207,67 @@ function BlobDetails({ manifestJSON }: { manifestJSON?: string }) {
         })}
       </div>
     </div>
+  );
+}
+
+// FeatureToggle — shown on model detail pages for featured owners.
+function FeatureToggle({ model }: { model: Model }) {
+  const account = useCurrentAccount();
+  const { mutateAsync: signPersonalMessage } = useSignPersonalMessage();
+  const [authMode, setAuthMode] = useState<string | null>(null);
+  const [isOwner, setIsOwner] = useState(false);
+  const [toggling, setToggling] = useState(false);
+  const [isFeatured, setIsFeatured] = useState(model.featured);
+
+  useEffect(() => {
+    getAuthMode().then(setAuthMode).catch(() => setAuthMode("open"));
+  }, []);
+
+  useEffect(() => {
+    if (authMode === "sui" && account) {
+      fetch(`/api/config?address=${encodeURIComponent(account.address)}`)
+        .then(r => r.json())
+        .then(c => setIsOwner(c.is_featured_owner === true))
+        .catch(() => {});
+    }
+  }, [authMode, account]);
+
+  if (authMode !== "sui" || !account || !isOwner) return null;
+
+  const handleToggle = async () => {
+    setToggling(true);
+    try {
+      const payload = `feature:${model.id}:${Date.now()}`;
+      const payloadBytes = new TextEncoder().encode(payload);
+      const result = await signPersonalMessage({ message: payloadBytes });
+
+      const rawKey = (account as any).publicKey;
+      const publicKey = typeof rawKey === 'string'
+        ? rawKey
+        : btoa(String.fromCharCode(...new Uint8Array(rawKey || [])));
+      const message = Array.from(payloadBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+
+      await toggleFeatured(model.id, !isFeatured, account.address, publicKey, result.signature, message);
+      setIsFeatured(!isFeatured);
+    } catch (e) {
+      console.error("Featured toggle failed:", e);
+    } finally {
+      setToggling(false);
+    }
+  };
+
+  return (
+    <button
+      onClick={handleToggle}
+      disabled={toggling}
+      className={`mt-3 text-xs px-3 py-1 rounded-full border transition-colors ${
+        isFeatured
+          ? "bg-amber-900/30 text-amber-400 border-amber-700/30 hover:bg-amber-900/50"
+          : "bg-[#111] text-gray-500 border-[#333] hover:border-amber-700/30 hover:text-amber-400"
+      }`}
+    >
+      {toggling ? "..." : isFeatured ? "★ Unfeature" : "☆ Feature"}
+    </button>
   );
 }
 
