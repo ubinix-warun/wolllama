@@ -1,4 +1,4 @@
-module github.com/wolllama/api
+module github.com/ubinix-warun/wolllama/api
 
 go 1.23
 

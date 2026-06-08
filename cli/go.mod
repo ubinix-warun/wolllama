@@ -1,4 +1,4 @@
-module github.com/wolllama/cli
+module github.com/ubinix-warun/wolllama/cli
 
 go 1.23
 

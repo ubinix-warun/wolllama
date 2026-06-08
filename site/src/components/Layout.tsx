@@ -54,11 +54,14 @@ export function Layout() {
       <footer className="border-t border-[#2a2a2a] px-6 py-8 text-center text-sm text-gray-500">
         <p>Wolllama — Decentralized model registry powered by Walrus</p>
         <div className="flex justify-center gap-4 mt-2">
-          <a href="https://github.com/wolllama-org" className="hover:text-white transition-colors">
+          <a href="https://wolllama.xyz" className="hover:text-white transition-colors">
+            Website
+          </a>
+          <a href="https://github.com/ubinix-warun/wolllama" className="hover:text-white transition-colors">
             GitHub
           </a>
-          <a href="https://twitter.com/wolllama" className="hover:text-white transition-colors">
-            Twitter
+          <a href="https://x.com/wolllama" className="hover:text-white transition-colors">
+            X / Twitter
           </a>
         </div>
       </footer>

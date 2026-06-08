@@ -183,7 +183,7 @@ export default function LandingPage() {
             transition={{ duration: 0.6, delay: 1.5, ease: "easeOut" }}
           >
             <a
-              href="https://github.com/wolllama-org/wolllama/releases"
+              href="https://github.com/ubinix-warun/wolllama/releases"
               className="inline-flex items-center gap-3 rounded-[26px] border border-white/30 px-8 py-3 text-lg font-medium text-white tracking-[0.04em] transition-all duration-200 hover:border-white hover:bg-white/5"
             >
               Start building
@@ -516,22 +516,22 @@ export default function LandingPage() {
         </p>
         <div className="flex justify-center gap-4 flex-wrap">
           <a
-            href="https://github.com/wolllama-org/wolllama/releases"
+            href="https://github.com/ubinix-warun/wolllama/releases"
             className="bg-white text-black px-6 py-3 rounded-lg font-medium hover:bg-gray-200 transition-colors"
           >
             Download CLI
           </a>
           <a
-            href="https://github.com/wolllama-org/wolllama"
+            href="https://wolllama.xyz"
             className="border border-[#444] text-white px-6 py-3 rounded-lg font-medium hover:border-white transition-colors"
           >
-            GitHub →
+            Website →
           </a>
           <a
-            href="https://twitter.com/wolllama"
+            href="https://x.com/wolllama"
             className="border border-[#444] text-white px-6 py-3 rounded-lg font-medium hover:border-white transition-colors"
           >
-            Twitter →
+            X / Twitter →
           </a>
         </div>
       </SectionReveal>

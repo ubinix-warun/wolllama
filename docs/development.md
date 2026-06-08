@@ -9,7 +9,7 @@
 ## Getting Started
 
 ```bash
-git clone https://github.com/wolllama/wolllama.git
+git clone https://github.com/ubinix-warun/wolllama.git
 cd wolllama
 
 # Install dependencies
@@ -207,10 +207,14 @@ GITHUB_CLIENT_ID=xxx GITHUB_CLIENT_SECRET=xxx ./api/wolllama-api
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `WOLLLAMA_AUTH_MODE` | `github` | Auth mode: open, token, github |
-| `WOLLLAMA_API_TOKEN` | — | Bearer token for token mode |
-| `WOLLLAMA_WALRUS_NETWORK` | `testnet` | Walrus network |
-| `WOLLLAMA_AGGREGATOR_URL` | auto | Override aggregator URL |
+| `WOLLLAMA_AUTH_MODE` | `open` | Auth mode: `open`, `sui`, `token`, `github` |
+| `WOLLLAMA_DB_PATH` | `wolllama.db` | Path to SQLite database file |
+| `WOLLLAMA_WALRUS_NETWORK` | `testnet` | Walrus network: `testnet`, `mainnet` |
+| `WOLLLAMA_AGGREGATOR_URL` | auto | Override Walrus aggregator URL |
+| `WOLLLAMA_SUI_NETWORK` | — | Sui network for wallet: `testnet`, `mainnet` |
+| `WOLLLAMA_SUI_RPC_URL` | — | Custom Sui RPC endpoint |
+| `WOLLLAMA_API_TOKEN` | — | Bearer token for `token` mode |
+| `WOLLLAMA_FEATURED_OWNERS` | — | Comma-separated Sui addresses (featured toggle) |
 | `GITHUB_CLIENT_ID` | — | GitHub OAuth client ID |
 | `GITHUB_CLIENT_SECRET` | — | GitHub OAuth client secret |
 | `PORT` | `8080` | Listen port |

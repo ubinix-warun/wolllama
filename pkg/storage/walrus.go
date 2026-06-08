@@ -3,7 +3,7 @@ package storage
 import (
 	"fmt"
 
-	wwalrus "github.com/wolllama/pkg/walrus"
+	wwalrus "github.com/ubinix-warun/wolllama/pkg/walrus"
 )
 
 const walrusMaxChunkSize = 256 * 1024 * 1024 // 256 MB

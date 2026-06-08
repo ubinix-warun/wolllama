@@ -11,10 +11,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/wolllama/api/auth"
-	"github.com/wolllama/api/db"
-	"github.com/wolllama/api/handler"
-	wwalrus "github.com/wolllama/pkg/walrus"
+	"github.com/ubinix-warun/wolllama/api/auth"
+	"github.com/ubinix-warun/wolllama/api/db"
+	"github.com/ubinix-warun/wolllama/api/handler"
+	wwalrus "github.com/ubinix-warun/wolllama/pkg/walrus"
 )
 
 // siteFS embeds the built React SPA for production deployments.

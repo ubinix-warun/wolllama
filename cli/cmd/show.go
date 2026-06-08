@@ -8,8 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/wolllama/pkg/manifest"
-	wwalrus "github.com/wolllama/pkg/walrus"
+	"github.com/ubinix-warun/wolllama/pkg/manifest"
+	wwalrus "github.com/ubinix-warun/wolllama/pkg/walrus"
 )
 
 func init() {

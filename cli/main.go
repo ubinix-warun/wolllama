@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/wolllama/cli/cmd"
+	"github.com/ubinix-warun/wolllama/cli/cmd"
 )
 
 func main() {

@@ -66,15 +66,21 @@ Go HTTP server with embedded React SPA. SQLite database for model registry.
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
 | `GET` | `/api/models` | No | Paginated model list with search |
+| `GET` | `/api/models/featured` | No | List up to 5 featured models |
 | `GET` | `/api/models/:id` | No | Model detail with blob info |
+| `PUT` | `/api/models/:id/featured` | Yes | Toggle featured flag (owner only) |
 | `POST` | `/api/models` | Yes | Submit model (sync Walrus validation) |
 | `GET` | `/api/manifest/preview` | No | Pre-fetch manifest info for submit form |
 | `GET` | `/api/blobs/:obj_id` | No | Proxy raw blob content from Walrus |
+| `GET/POST` | `/api/auth/sui/nonce` | No | Generate/verify Sui wallet nonce |
+| `POST` | `/api/auth/sui/verify` | No | Verify Sui wallet signature |
 | `GET` | `/api/auth/login` | No | GitHub OAuth redirect |
 | `GET` | `/api/auth/callback` | No | OAuth callback |
 | `GET` | `/api/auth/me` | Yes | Current user info |
+| `GET` | `/api/users/:id/models` | No | Models by user |
+| `GET` | `/api/config` | No | Frontend config (network, featured owner status) |
 
-**Auth modes:** `open` (no auth), `token` (bearer token), `github` (OAuth).
+**Auth modes:** `open` (no auth), `sui` (wallet signature), `token` (bearer token), `github` (OAuth).
 
 ### Site (`site/`)
 

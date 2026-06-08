@@ -51,6 +51,17 @@ SQLite stores wallet address + signature alongside model submissions.
   - `WOLLLAMA_SUI_NETWORK` — Sui mainnet/testnet selection
   - `GET /api/config` — exposes walrus_network + sui_network to frontend
   - `GetOrCreateAnonUser` — robust anonymous user creation
+- **Featured models** — curated model curation for site owners
+  - `featured` column on models table with `PUT /api/models/{id}/featured` toggle
+  - `GET /api/models/featured` — list up to 5 featured models
+  - `WOLLLAMA_FEATURED_OWNERS` env var — comma-separated Sui addresses allowed to toggle
+  - Featured badges on model list cards (★), detail page (★ Featured), and landing section
+  - FeaturedModelsSection on landing — visible in all auth modes
+- **Docker / Cloud Run deployment**
+  - Multi-stage Dockerfile (Node SPA → Go CGO static binary → Alpine runtime)
+  - `api/seed.sql` — preloaded preview model for warm-start images
+  - `api/DEPLOY.md` — step-by-step Cloud Run guide with persistent storage (GCS FUSE)
+  - `WOLLLAMA_DB_PATH` env var for mounted volume paths
 
 ## v1.3 Phase 2 — Sui On-Chain Registry 🔜
 

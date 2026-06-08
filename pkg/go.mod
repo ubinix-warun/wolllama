@@ -1,4 +1,4 @@
-module github.com/wolllama/pkg
+module github.com/ubinix-warun/wolllama/pkg
 
 go 1.23
 

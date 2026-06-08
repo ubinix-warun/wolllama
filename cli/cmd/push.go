@@ -10,9 +10,9 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/wolllama/cli/internal/ollama"
-	"github.com/wolllama/pkg/manifest"
-	"github.com/wolllama/pkg/storage"
+	"github.com/ubinix-warun/wolllama/cli/internal/ollama"
+	"github.com/ubinix-warun/wolllama/pkg/manifest"
+	"github.com/ubinix-warun/wolllama/pkg/storage"
 )
 
 func init() {
