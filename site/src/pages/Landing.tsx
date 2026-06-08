@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { motion, useScroll, useTransform } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
-import { listFeaturedModels, getAuthMode, type Model } from "../lib/api";
+import { listFeaturedModels, type Model } from "../lib/api";
 import wallyImg from "../assets/wally.webp";
 import tatumLogo from "../assets/tatum-logo.svg";
 
@@ -541,29 +541,19 @@ export default function LandingPage() {
 }
 
 // ═══ Featured Models Section ═══
-// Only rendered in sui mode. In open mode, hidden entirely.
+// Renders when there are featured models, regardless of auth mode.
 
 function FeaturedModelsSection() {
   const [models, setModels] = useState<Model[]>([]);
-  const [authMode, setAuthMode] = useState<string>("open");
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    getAuthMode().then(m => {
-      setAuthMode(m);
-      if (m === "sui") {
-        listFeaturedModels()
-          .then(d => setModels(d.models || []))
-          .catch(() => {})
-          .finally(() => setLoaded(true));
-      } else {
-        setLoaded(true);
-      }
-    });
+    listFeaturedModels()
+      .then(d => setModels(d.models || []))
+      .catch(() => {})
+      .finally(() => setLoaded(true));
   }, []);
 
-  // Hide entirely in open mode
-  if (loaded && authMode !== "sui") return null;
   // Hide if no featured models after loading
   if (loaded && models.length === 0) return null;
 

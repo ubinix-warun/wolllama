@@ -9,11 +9,12 @@ export function ModelDetailPage() {
   const [model, setModel] = useState<Model | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isFeatured, setIsFeatured] = useState(false);
 
   useEffect(() => {
     if (!id) return;
     getModel(Number(id))
-      .then(setModel)
+      .then(m => { setModel(m); setIsFeatured(m.featured ?? false); })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, [id]);
@@ -56,10 +57,10 @@ export function ModelDetailPage() {
                 ✓ Sui wallet signed
               </p>
             )}
-            <FeatureToggle model={model} />
+            <FeatureToggle model={model} isFeatured={isFeatured} onToggle={setIsFeatured} />
           </div>
 
-          {model.featured && (
+          {isFeatured && (
             <span className="bg-amber-900/30 text-amber-400 text-xs px-2 py-1 rounded">
               ★ Featured
             </span>
@@ -211,13 +212,12 @@ function BlobDetails({ manifestJSON }: { manifestJSON?: string }) {
 }
 
 // FeatureToggle — shown on model detail pages for featured owners.
-function FeatureToggle({ model }: { model: Model }) {
+function FeatureToggle({ model, isFeatured, onToggle }: { model: Model; isFeatured: boolean; onToggle: (v: boolean) => void }) {
   const account = useCurrentAccount();
   const { mutateAsync: signPersonalMessage } = useSignPersonalMessage();
   const [authMode, setAuthMode] = useState<string | null>(null);
   const [isOwner, setIsOwner] = useState(false);
   const [toggling, setToggling] = useState(false);
-  const [isFeatured, setIsFeatured] = useState(model.featured);
 
   useEffect(() => {
     getAuthMode().then(setAuthMode).catch(() => setAuthMode("open"));
@@ -248,7 +248,7 @@ function FeatureToggle({ model }: { model: Model }) {
       const message = Array.from(payloadBytes).map(b => b.toString(16).padStart(2, '0')).join('');
 
       await toggleFeatured(model.id, !isFeatured, account.address, publicKey, result.signature, message);
-      setIsFeatured(!isFeatured);
+      onToggle(!isFeatured);
     } catch (e) {
       console.error("Featured toggle failed:", e);
     } finally {

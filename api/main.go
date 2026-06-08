@@ -28,8 +28,13 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)
 
-	// Database
-	database, err := db.Open("wolllama.db")
+	// Database — path configurable via WOLLLAMA_DB_PATH for deployments
+	// that need persistent storage (e.g. Cloud Run with mounted volume).
+	dbPath := os.Getenv("WOLLLAMA_DB_PATH")
+	if dbPath == "" {
+		dbPath = "wolllama.db"
+	}
+	database, err := db.Open(dbPath)
 	if err != nil {
 		slog.Error("failed to open database", "error", err)
 		os.Exit(1)
