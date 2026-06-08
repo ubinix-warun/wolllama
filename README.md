@@ -22,7 +22,6 @@ wolllama pull O1ABCdef...xyz
 - **SHA256 verification** — Every pulled blob is checksum-verified
 - **Web registry** — Browse, discover, and submit models at the Wolllama site
 - **Sui wallet auth** — Sign submissions with your Sui wallet (ed25519 verification)
-- **Multi-provider** — Walrus native, Tatum gateway, IPFS + S3 (planned)
 - **Open source** — MIT licensed
 
 ## Quick Start
@@ -31,10 +30,10 @@ wolllama pull O1ABCdef...xyz
 
 ```bash
 # Download binary
-curl -fsSL https://github.com/wolllama/wolllama/releases/latest/download/wolllama-darwin-arm64.tar.gz | tar xz
+curl -fsSL https://github.com/ubinix-warun/wolllama/releases/latest/download/wolllama-darwin-arm64.tar.gz | tar xz
 
 # Or with Go
-go install github.com/wolllama/cli@latest
+go install github.com/ubinix-warun/wolllama/cli@latest
 ```
 
 ### Push a model
@@ -133,6 +132,9 @@ wolllama/
 
 ## Links
 
+- [Website](https://wolllama.xyz/)
+- [GitHub](https://github.com/ubinix-warun/wolllama)
+- [Twitter / X](https://x.com/wolllama)
 - [Architecture](docs/architecture.md)
 - [Development Guide](docs/development.md)
 - [Roadmap](docs/roadmap.md)
