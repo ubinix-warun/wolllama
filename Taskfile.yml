@@ -23,6 +23,12 @@ tasks:
       - task: build-api
       - task: build-cli
 
+  build-chat:
+    desc: Build the chat SPA for production
+    dir: chat
+    cmds:
+      - npm run build
+
   build-cli:
     desc: Build the CLI binary
     dir: cli
@@ -66,6 +72,12 @@ tasks:
     cmds:
       - npm run dev
 
+  dev-chat:
+    desc: Start the Chat Vite dev server (port 5174)
+    dir: chat
+    cmds:
+      - npm run dev
+
   # ---- Testing ----
 
   test:
@@ -90,6 +102,12 @@ tasks:
     cmds:
       - npm run test -- --run
 
+  test-chat:
+    desc: Run chat smoke tests
+    dir: chat
+    cmds:
+      - npm test
+
   # ---- Linting ----
 
   lint:
@@ -106,6 +124,12 @@ tasks:
   lint-site:
     desc: Lint TypeScript
     dir: site
+    cmds:
+      - npm run lint
+
+  lint-chat:
+    desc: Lint chat TypeScript
+    dir: chat
     cmds:
       - npm run lint
 
@@ -137,6 +161,7 @@ tasks:
     desc: Install dependencies
     cmds:
       - cd site && npm install
+      - cd chat && npm install
       - cd cli && go mod download
       - cd api && go mod download
       - cd pkg && go mod download

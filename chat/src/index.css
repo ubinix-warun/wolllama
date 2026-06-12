@@ -1,0 +1,80 @@
+@import "tailwindcss";
+
+/* Class-based dark mode (toggle via useTheme hook) */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Syntax highlighting — default light theme */
+@import "highlight.js/styles/github.css";
+
+/* Syntax highlighting — dark theme when .dark class is on <html> */
+.dark .hljs {
+  /* Inherit from highlight.js github-dark theme — loaded dynamically */
+}
+
+/* Ensure code blocks look good in both modes */
+.dark pre code.hljs {
+  background: #0d1117 !important;
+  color: #c9d1d9 !important;
+}
+
+:root {
+  color-scheme: light;
+}
+
+.dark {
+  color-scheme: dark;
+}
+
+/* Mobile safe-area padding */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 16px);
+}
+
+
+
+
+@keyframes twinkle {
+  0%, 100% { opacity: 0.15; }
+  50% { opacity: 1; }
+}
+
+@keyframes aurora-drift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.animate-twinkle {
+  animation: twinkle var(--twinkle-dur, 4s) ease-in-out infinite;
+  animation-delay: var(--twinkle-del, 0s);
+}
+
+.animate-aurora {
+  animation: aurora-drift 20s ease-in-out infinite;
+  background-size: 200% 200%;
+}
+
+/* Chat-specific styles */
+.message-list {
+  scroll-behavior: smooth;
+}
+
+.message-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.message-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.message-list::-webkit-scrollbar-thumb {
+  background-color: rgba(156, 163, 175, 0.5);
+  border-radius: 3px;
+}
+
+/* Dark mode handled by Tailwind's dark: variant + prefers-color-scheme */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+  }
+}
